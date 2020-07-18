@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-BASEDIR=$(dirname "$0")
+BASEDIR=$(cd "$(dirname "$0")"; pwd)
 PORT=14227
 TEST_USER=testuser@example.com
 FAILED=0
@@ -78,7 +78,6 @@ assert_equal_jq() {
 
 assert_notnull_jq() {
   selector=$1;shift
-  expected=$1;shift
   actual=$(echo "$TEST_CONTENT" | jq -r "$selector")
   if [ "$actual" == "null" ]; then
     printf "${RED}✗  CHECK${NC} ${BOLD}$selector${NC} is null\n"
@@ -101,13 +100,26 @@ mkdir -p "$BASEDIR/data/plans"
 sqlite3 "$BASEDIR/data/test.db" < "$BASEDIR/../schema.sql"
 
 # run the test server
-PORT=$PORT \
-PID_FILE="$BASEDIR/data/test.pid" \
-LOG_FILE="$BASEDIR/data/test.log" \
-DATABASE="$BASEDIR/data/test.db" \
-PLAN_DIR="$BASEDIR/data/plans" \
-SENDMAIL=/usr/bin/true \
-perl "$BASEDIR/../server.pl" -d >>/dev/null 2>>/dev/null
+if [ -z "$USE_DOCKER" ]; then
+  PORT=$PORT \
+  PID_FILE="$BASEDIR/data/test.pid" \
+  LOG_FILE="$BASEDIR/data/test.log" \
+  DATABASE="$BASEDIR/data/test.db" \
+  PLAN_DIR="$BASEDIR/data/plans" \
+  SENDMAIL=/usr/bin/true \
+  perl "$BASEDIR/../server.pl" -d >>/dev/null 2>>/dev/null
+else
+  docker build -t dotplan-online-test "$BASEDIR/.."
+  docker run --name dotplan_online_test -d --rm \
+    -v "$BASEDIR/data":"/opt/data" -p $PORT:$PORT \
+    -e PORT=$PORT \
+    -e PID_FILE="/opt/data/test.pid" \
+    -e LOG_FILE="/opt/data/test.log" \
+    -e DATABASE="/opt/data/test.db" \
+    -e PLAN_DIR="/opt/data/plans" \
+    -e SENDMAIL=/usr/bin/true \
+    dotplan-online-test
+fi
 
 wait_file "$BASEDIR/data/test.pid" || {
   echo "Pid file didn't appear after $? seconds, bailing."
@@ -236,9 +248,14 @@ that is signed'
 
 printf "\nTearing down...\n"
 
-if [ -f "$BASEDIR/data/test.pid" ]; then
-  kill -9 `cat "$BASEDIR/data/test.pid"`
-  rm "$BASEDIR/data/test.pid"
+if [ -z "$USE_DOCKER" ]; then
+  if [ -f "$BASEDIR/data/test.pid" ]; then
+    kill -9 `cat "$BASEDIR/data/test.pid"`
+    rm "$BASEDIR/data/test.pid"
+  fi
+else
+  docker exec dotplan_online_test rm /opt/data/test.pid
+  docker kill dotplan_online_test
 fi
 
 printf "Tests complete.\n"
