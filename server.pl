@@ -10,10 +10,10 @@ use open qw(:std :utf8);
 ######################
 
 my $server_port = $ENV{'PORT'} || 4227;
-my $pid_file = $ENV{'PID_FILE'} || './dotplan.pid';
-my $log_file = $ENV{'LOG_FILE'} || './dotplan.log';
-my $database = $ENV{'DATABASE'} || './users.db';
-my $plan_dir = $ENV{'PLAN_DIR'} || './plans';
+my $pid_file = $ENV{'PID_FILE'} || './data/dotplan.pid';
+my $log_file = $ENV{'LOG_FILE'} || './data/dotplan.log';
+my $database = $ENV{'DATABASE'} || './data/users.db';
+my $plan_dir = $ENV{'PLAN_DIR'} || './data/plans';
 my $sendmail = $ENV{'SENDMAIL'} || '/usr/bin/sendmail';
 
 my $pw_token_expiration_minutes = $ENV{'PW_TOKEN_EXPIRATION_MINUTES'} || 10;
@@ -38,6 +38,7 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
 {
   package DotplanApi;
   use base qw(HTTP::Server::Simple::CGI);
+  sub net_server { 'Net::Server::Fork' }
 
   # Caching DNS resolver
   {
@@ -49,6 +50,7 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
     }
   }
 
+  use IPC::Run;
   use DBI;
   use File::Temp qw(tempfile);
   use Fcntl qw(:flock);
@@ -82,8 +84,6 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
     501 => 'Not Implemented',
     500 => 'Internal Server Error'
   };
-
-  sub net_server { 'Net::Server::Fork' }
 
   #################
   # Request Routing
@@ -212,7 +212,7 @@ EOF
       my $user = util_get_user($email);
       if (defined $user && $user->{'verified'}) {
         print_json_response($cgi, 400, {error => 'User already exists.'});
-      } elsif (defined $user->{'pw_token_expires'} && $user->{'pw_token_expires'} >= time) {
+      } elsif (defined $user && defined $user->{'pw_token_expires'} && $user->{'pw_token_expires'} >= time) {
         print_json_response($cgi, 429, {error => "Please wait up to $pw_token_expiration_minutes minutes and try again."});
       } else {
         my $password = util_json_body($cgi)->{'password'};
@@ -222,9 +222,10 @@ EOF
           my $query = (defined $user)
             ? "UPDATE users SET password=?, pw_token=?, pw_token_expires=datetime('now', '+$pw_token_expiration_minutes minutes') WHERE email=?"
             : "INSERT INTO users (password, pw_token, pw_token_expires, email) values (?, ?, datetime('now', '+$pw_token_expiration_minutes minutes'), ?)";
-          my $sth = util_get_dbh()->prepare($query);
           my $crypted = util_bcrypt($password);
+          my $sth = util_get_dbh()->prepare($query);
           $sth->execute($crypted, util_token(), $email);
+          die $sth->errstr if $sth->err;
           # TODO: send email
           print_json_response($cgi, 200, {email => $email});
         }
@@ -237,17 +238,18 @@ EOF
     my ($email, $cgi) = @_;
     my $token = $cgi->param('token');
     if (!defined $token) {
-      print_html_response(400, 'No token found in request.');
+      print_html_response($cgi, 400, 'No token found in request.');
     } else {
       my $user = util_get_user($email);
       if (!defined $user || $user->{'verified'}) {
-        print_html_response(404, 'User not found.');
+        print_html_response($cgi, 404, 'User not found.');
       } elsif ($user->{'pw_token'} ne $token) {
-        print_html_response(400, 'Bad or expired token.');
+        print_html_response($cgi, 400, 'Bad or expired token.');
       } else {
         my $sth = util_get_dbh()->prepare('UPDATE users SET verified=1, pw_token=null, pw_token_expires=null WHERE email=?');
         $sth->execute($email);
-        print_html_response(200, 'Your email address has been verified.');
+        die $sth->errstr if $sth->err;
+        print_html_response($cgi, 200, 'Your email address has been verified.');
       }
     }
   }
@@ -270,6 +272,7 @@ EOF
         }
       }
       $sth->execute($token, "+$minutes minutes", $user->{'email'});
+      die $sth->errstr if $sth->err;
       print_json_response($cgi, 200, {token => $token});
     }
   }
@@ -283,6 +286,7 @@ EOF
     } else {
       my $sth = util_get_dbh()->prepare('UPDATE users SET token=null, token_expires=null WHERE email=?');
       $sth->execute($user->{'email'});
+      die $sth->errstr if $sth->err;
       print_json_response($cgi, 200, {success => 1});
     }
   }
@@ -299,6 +303,7 @@ EOF
       my $token = util_token();
       my $sth = util_get_dbh()->prepare("UPDATE users SET pw_token=?, pw_token_expires=datetime('now', '+10 minutes') WHERE email=?");
       $sth->execute($token, $email);
+      die $sth->errstr if $sth->err;
       # TODO: send email
       print_html_response($cgi, 200, 'Check your email and follow the instructions to change your password.');
     }
@@ -320,8 +325,9 @@ EOF
         print_json_response($cgi, 400, {error => "Password must be at least $minimum_password_length characters long."});
       } else {
         my $crypted = util_bcrypt($password);
-        my $sth = util_get_dbh()->prepare('UPDATE users SET password=?, pw_token=null, pw_token_expires=null WHERE email=?');
+        my $sth = util_get_dbh()->prepare('UPDATE users SET password=?, pw_token=null, pw_token_expires=null, token=null, token_expires=null WHERE email=?');
         $sth->execute($crypted, $email);
+        die $sth->errstr if $sth->err;
         print_json_response($cgi, 200, {success => 1});
       }
     }
@@ -355,6 +361,7 @@ EOF
   sub get_plan {
     my ($email, $cgi) = @_;
 
+    my $format = util_get_response_format($cgi);
     my $plan = util_get_plan($email);
 
     if (defined $plan && defined $plan->{'redirect'}) {
@@ -362,25 +369,24 @@ EOF
       print_response($cgi, 301, encode_json({location => $plan->{'redirect'}}), 'application/json', $plan->{'redirect'});
     } elsif (defined $plan) {
       # found local plan, render response
-
-      my $accept = $cgi->http('Accept');
-      my $format = lc($cgi->param('format') || $cgi->http('Accept'));
       my $body;
-      if ($format eq 'json' || $format eq 'application/json') {
-        $format = 'application/json';
+      if ($format eq 'application/json') {
         $body = encode_json($plan);
-      } elsif ($format eq 'html' || $format eq 'text/html') {
-        $format = 'text/html';
+      } elsif ($format eq 'text/html') {
         $body = encode_entities($plan->{'plan'});
         $body =~ s/\n/<br>\n/g;
       } else {
-        $format = 'text/plain';
         $body = $plan->{'plan'};
       }
-
       print_response($cgi, 200, $body, $format);
     } else {
-      print_response($cgi, 404, $not_found);
+      if ($format eq 'application/json') {
+        print_response($cgi, 404, $not_found);
+      } elsif ($format eq 'text/html') {
+        print_html_response($cgi, 404, 'No plan found.');
+      } else {
+        print_response($cgi, 404, '', 'text/plain');
+      }
     }
   }
 
@@ -394,7 +400,7 @@ EOF
       # found external plan service, redirect request
       print_response($cgi, 308, encode_json({location => $plan->{'redirect'}}), 'application/json', $plan->{'redirect'});
     } elsif (defined $plan) {
-      my $pubkey = util_json_body($cgi)->{'pgpkey'};
+      my $pubkey = util_json_body($cgi)->{'pubkey'};
       if (!defined $pubkey || !defined $plan->{'signature'}) {
         print_json_response($cgi, 200, {verified => 0});
       } elsif (length($pubkey) > $maximum_pubkey_length) {
@@ -403,17 +409,17 @@ EOF
         my ($keyfh, $keyfile) = tempfile('tmpXXXXXX', TMPDIR => 1);
         print $keyfh $pubkey;
         close($keyfh);
-        util_log("saved key file to $keyfile");
         my $basename = "$plan_dir/" . shell_quote($email);
-        my $convert = system("gpg2 --dearmor $keyfile > $keyfile.gpg");
-        my $valid = system("gpg2 --no-default-keyring --keyring $keyfile.gpg --verify $basename.sig $basename.plan");
-        if ($convert != 0 || $valid != 0) {
-          print_json_response($cgi, 200, {verified => 0});
-        } else {
+        if(
+          (IPC::Run::run ['gpg2', '--dearmor'], '<', $keyfile, '>', "$keyfile.gpg", '2>>', '/dev/null') &&
+          (IPC::Run::run ['gpg2', '--no-default-keyring', '--keyring', "$keyfile.gpg", '--verify', "$basename.asc", "$basename.plan"], '>', '/dev/null', '2>>', '/dev/null')
+        ) {
           print_json_response($cgi, 200, {
             plan => $plan->{'plan'},
             verified => 1
           });
+        } else {
+          print_json_response($cgi, 200, {verified => 0});
         }
       }
     } else {
@@ -444,6 +450,18 @@ EOF
       binmode($_log, ':unix');
     }
     print $_log "$timestamp $msg\n";
+  }
+
+  sub util_get_response_format {
+    my $cgi = shift;
+    my $accept = $cgi->http('Accept');
+    my $format = lc($cgi->param('format') || $cgi->http('Accept'));
+    if ($format eq 'json' || $format eq 'application/json') {
+      return 'application/json';
+    } elsif ($format eq 'html' || $format eq 'text/html') {
+      return 'text/html';
+    }
+    return 'text/plain';
   }
 
   # encrypt a password with a provided or random salt
@@ -525,7 +543,9 @@ EOF
     my $email = shift;
     my $sth = util_get_dbh()->prepare("SELECT email, password, token, strftime('%s', token_expires) AS token_expires, pw_token, strftime('%s', pw_token_expires) AS pw_token_expires, verified, strftime('%s', created) AS created, strftime('%s', updated) AS updated FROM users WHERE email=?");
     $sth->execute($email);
-    return $sth->fetchrow_hashref;
+    die $sth->errstr if $sth->err;
+    my $user = $sth->fetchrow_hashref;
+    return (keys %$user > 0) ? $user : undef;
   }
 
   # save a plan by email
@@ -544,13 +564,12 @@ EOF
     }
 
     if (defined $plan && defined $signature) {
-      open(my $sig_file, '>', "$basename.sig");
+      open(my $sig_file, '>', "$basename.asc");
       flock($sig_file, LOCK_EX);
-      binmode $sig_file;
-      print $sig_file decode_base64($signature);
+      print $sig_file $signature;
       close($sig_file);
-    } elsif (-f "$basename.sig") {
-      unlink "$basename.sig";
+    } elsif (-f "$basename.asc") {
+      unlink "$basename.asc";
     }
 
     # invalidate cache
@@ -571,8 +590,8 @@ EOF
         $details->{'plan'} = <$plan_file>;
         close($plan_file);
 
-        if (-f "$basename.sig") {
-          open(my $sig_file, '<', "$basename.sig");
+        if (-f "$basename.asc") {
+          open(my $sig_file, '<', "$basename.asc");
           flock($sig_file, LOCK_SH);
           local $/;
           $details->{'signature'} = <$sig_file>;
@@ -625,7 +644,7 @@ EOF
 }
 
 # only supports one optional argument -d to daemonize
-my $daemonize = $ARGV[0] == '-d' if @ARGV == 1;
+my $daemonize = $ARGV[0] eq '-d' if @ARGV == 1;
 
 # start server and fork process as current user
 my ($user, $passwd, $uid, $gid) = getpwuid $<;

@@ -43,7 +43,7 @@
    - `404` if no plan found
    - `301` redirect if plan is on a different provider
 - `POST /verify/{email}` - verify PGP signature of a plan
-   - request data: `{"pgpkey":"ascii public key"}`
+   - request data: `{"pubkey":"ascii public key"}`
    - response data: `{"plan":"whatever","verified":1}` or `{"verified":0}`
    - `404` if no plan found
    - `308` redirect if plan is on a different provider
