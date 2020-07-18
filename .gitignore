@@ -1,4 +1,2 @@
-dotplan.pid
-dotplan.log
-*.db
-plans/*
+data/*
+test/data/*
