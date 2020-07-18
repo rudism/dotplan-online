@@ -10,6 +10,7 @@ TEST_USER=testuser@example.com
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
 BOLD='\033[1m'
 NC='\033[0m'
 
@@ -26,23 +27,22 @@ curl_test() {
   expect_content_type=$1;shift
   TEST_CONTENT=$(curl -s -H "Content-Type: application/json" -w '%{stderr}%{response_code}|%{content_type}' "$@" 2>"$BASEDIR/data/err")
   exit_code=$?
-  printf -- "- ${BOLD}TEST $test_name:${NC} "
   if [ $exit_code -ne 0 ]; then
-    printf "${RED}FAIL${NC} with exit code $exit_code\n"
+    printf "${RED}✗ TEST${NC} ${BOLD}$test_name${NC} with exit code $exit_code\n"
     return 1
   fi
   stderr=$(<"$BASEDIR/data/err")
   response_code=$(echo $stderr | cut -f1 -d'|')
   content_type=$(echo $stderr | cut -f2 -d'|')
   if [ "$response_code" != "$expect_response_code" ]; then
-    printf "${RED}FAIL${NC} with response code $response_code\n"
+    printf "${RED}✗ TEST${NC} ${BOLD}$test_name${NC} with response code $response_code\n"
     return 1
   fi
   if [ "$content_type" != "$expect_content_type" ]; then
-    printf "${RED}FAIL${NC} with content type $content_type\n"
+    printf "${RED}✗ TEST${NC} ${BOLD}$test_name${NC} with content type $content_type\n"
     return 1
   fi
-  printf "${GREEN}PASS${NC}\n"
+  printf "${GREEN}✓ TEST${NC} ${BOLD}$test_name${NC}\n"
   return 0
 }
 
@@ -50,25 +50,23 @@ assert_equal() {
   check_name=$1;shift
   actual=$1;shift
   expected=$1;shift
-  printf "  - ${BOLD}CHECK $check_name:${NC} "
   if [ "$actual" != "$expected" ]; then
-    printf "${RED}FAIL${NC} \"$actual\" != \"$expected\"\n"
+    printf "${RED}✗  CHECK${NC} ${BOLD}$check_name${NC}\n\n\"${YELLOW}$actual${NC}\" != \"${YELLOW}$expected${NC}\"\n\n"
     return 1
   fi
-  printf "${GREEN}PASS${NC}\n"
+  printf "${GREEN}✓  CHECK${NC} ${BOLD}$check_name${NC}\n"
   return 0;
 }
 
 assert_equal_jq() {
   selector=$1;shift
   expected=$1;shift
-  printf "  - ${BOLD}CHECK $selector:${NC} "
   actual=$(echo "$TEST_CONTENT" | jq -r "$selector")
   if [ "$actual" != "$expected" ]; then
-    printf "${RED}FAIL${NC} \"$actual\" != \"$expected\"\n"
+    printf "${RED}✗  CHECK${NC} ${BOLD}$selector${NC}\n\n\"${YELLOW}$actual${NC}\" != \"${YELLOW}$expected${NC}\"\n\n"
     return 1
   fi
-  printf "${GREEN}PASS${NC}\n"
+  printf "${GREEN}✓  CHECK${NC} ${BOLD}$selector${NC}\n"
   return 0;
 }
 
