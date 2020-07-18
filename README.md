@@ -34,16 +34,16 @@
 ### Plans
 
 - `PUT /plan/{email}` - update a plan
-   - request data: `{"plan":"whatever","signature":"whatever","auth":"token"}`
+   - request data: `{"plan":"whatever","signature":"base64 encoded signature","auth":"token"}`
    - omitting `plan` from the payload will delete the existing plan
 - `GET /plan/{email}` - retrieve a plan
    - `text/plain` by default - raw plan content
    - `?format=html` or `Accept: text/html` - plan content with html entity encoding for special characters
-   - `?format=json` or `Accept: application/json` - response data: `{"plan":"whatever","signature":"whatever"}`
+   - `?format=json` or `Accept: application/json` - response data: `{"plan":"whatever","signature":"base64 encoded signature"}`
    - `404` if no plan found
    - `301` redirect if plan is on a different provider
 - `POST /verify/{email}` - verify PGP signature of a plan
-   - request data: `{"pgpkey":"public key"}`
-   - response data: `{"plan":"whatever","verified":true}` or `{"verified":false}`
+   - request data: `{"pgpkey":"ascii public key"}`
+   - response data: `{"plan":"whatever","verified":1}` or `{"verified":0}`
    - `404` if no plan found
    - `308` redirect if plan is on a different provider

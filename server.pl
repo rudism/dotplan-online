@@ -23,6 +23,7 @@ my $minimum_email_length = $ENV{'MINIMUM_EMAIL_LENGTH'} || 6;
 my $maximum_email_length = $ENV{'MAXIMUM_EMAIL_LENGTH'} || 120;
 my $maximum_plan_length = $ENV{'MAXIMUM_PLAN_LENGTH'} || 4096;
 my $maximum_signature_length = $ENV{'MAXIMUM_SIGNATURE_LENGTH'} || 1024;
+my $maximum_pubkey_length = $ENV{'MAXIMUM_PUBKEY_LENGTH'} || 5125;
 
 my $hostname = $ENV{'HOSTNAME'};
 my $localdomains = {};
@@ -49,6 +50,7 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
   }
 
   use DBI;
+  use File::Temp qw(tempfile);
   use Fcntl qw(:flock);
   use Net::DNS::Resolver;
   use Crypt::Eksblowfish::Bcrypt qw(bcrypt_hash en_base64);
@@ -336,7 +338,6 @@ EOF
       my $plan = $body->{'plan'};
       my $signature = $body->{'signature'};
       my $token = $body->{'auth'};
-      util_log("authenticating $token $user->{token}");
       if (!defined $user->{'token'} || !defined $user->{'token_expires'} || !defined $token || $token ne $user->{'token'} || $user->{'token_expires'} < time) {
         print_response($cgi, 401, $not_authorized);
       } elsif (length($plan) > $maximum_plan_length) {
@@ -384,7 +385,41 @@ EOF
   }
 
   ##### POST /verify/{email}
-  sub verify_plan { shift; print_response(shift, 501, $not_implemented); }
+  sub verify_plan {
+    my ($email, $cgi) = @_;
+
+    my $plan = util_get_plan($email);
+
+    if (defined $plan && defined $plan->{'redirect'}) {
+      # found external plan service, redirect request
+      print_response($cgi, 308, encode_json({location => $plan->{'redirect'}}), 'application/json', $plan->{'redirect'});
+    } elsif (defined $plan) {
+      my $pubkey = util_json_body($cgi)->{'pgpkey'};
+      if (!defined $pubkey || !defined $plan->{'signature'}) {
+        print_json_response($cgi, 200, {verified => 0});
+      } elsif (length($pubkey) > $maximum_pubkey_length) {
+        print_json_response($cgi, 400, {error => "Pubkey exceeds maximum length of $maximum_pubkey_length."});
+      } else {
+        my ($keyfh, $keyfile) = tempfile('tmpXXXXXX', TMPDIR => 1);
+        print $keyfh $pubkey;
+        close($keyfh);
+        util_log("saved key file to $keyfile");
+        my $basename = "$plan_dir/" . shell_quote($email);
+        my $convert = system("gpg2 --dearmor $keyfile > $keyfile.gpg");
+        my $valid = system("gpg2 --no-default-keyring --keyring $keyfile.gpg --verify $basename.sig $basename.plan");
+        if ($convert != 0 || $valid != 0) {
+          print_json_response($cgi, 200, {verified => 0});
+        } else {
+          print_json_response($cgi, 200, {
+            plan => $plan->{'plan'},
+            verified => 1
+          });
+        }
+      }
+    } else {
+      print_response($cgi, 404, $not_found);
+    }
+  }
 
   ###################
   # Utility Functions
@@ -511,7 +546,8 @@ EOF
     if (defined $plan && defined $signature) {
       open(my $sig_file, '>', "$basename.sig");
       flock($sig_file, LOCK_EX);
-      print $sig_file $signature;
+      binmode $sig_file;
+      print $sig_file decode_base64($signature);
       close($sig_file);
     } elsif (-f "$basename.sig") {
       unlink "$basename.sig";
@@ -586,22 +622,10 @@ EOF
     my $json = $cgi->param('POSTDATA') || $cgi->param('PUTDATA');
     return decode_json($json);
   }
-
-  ############
-  # Destructor
-  ############
-
-  END {
-    if (defined $_log) {
-      close($_log);
-    }
-    if (defined $_dbh) {
-      $_dbh->disconnect();
-    }
-  }
 }
 
-my $daemonize = $ARGV[0] == '-d' if @ARGV > 0;
+# only supports one optional argument -d to daemonize
+my $daemonize = $ARGV[0] == '-d' if @ARGV == 1;
 
 # start server and fork process as current user
 my ($user, $passwd, $uid, $gid) = getpwuid $<;
