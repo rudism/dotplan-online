@@ -3,6 +3,7 @@
 BASEDIR=$(dirname "$0")
 PORT=14227
 TEST_USER=testuser@example.com
+FAILED=0
 
 ###################
 # Utility Functions
@@ -29,6 +30,7 @@ curl_test() {
   exit_code=$?
   if [ $exit_code -ne 0 ]; then
     printf "${RED}✗ TEST${NC} ${BOLD}$test_name${NC} with exit code $exit_code\n"
+    ((++FAILED))
     return 1
   fi
   stderr=$(<"$BASEDIR/data/err")
@@ -36,10 +38,12 @@ curl_test() {
   content_type=$(echo $stderr | cut -f2 -d'|')
   if [ "$response_code" != "$expect_response_code" ]; then
     printf "${RED}✗ TEST${NC} ${BOLD}$test_name${NC} with response code $response_code\n"
+    ((++FAILED))
     return 1
   fi
   if [ "$content_type" != "$expect_content_type" ]; then
     printf "${RED}✗ TEST${NC} ${BOLD}$test_name${NC} with content type $content_type\n"
+    ((++FAILED))
     return 1
   fi
   printf "${GREEN}✓ TEST${NC} ${BOLD}$test_name${NC}\n"
@@ -52,6 +56,7 @@ assert_equal() {
   expected=$1;shift
   if [ "$actual" != "$expected" ]; then
     printf "${RED}✗  CHECK${NC} ${BOLD}$check_name${NC}\n\n\"${YELLOW}$actual${NC}\" != \"${YELLOW}$expected${NC}\"\n\n"
+    ((++FAILED))
     return 1
   fi
   printf "${GREEN}✓  CHECK${NC} ${BOLD}$check_name${NC}\n"
@@ -64,6 +69,20 @@ assert_equal_jq() {
   actual=$(echo "$TEST_CONTENT" | jq -r "$selector")
   if [ "$actual" != "$expected" ]; then
     printf "${RED}✗  CHECK${NC} ${BOLD}$selector${NC}\n\n\"${YELLOW}$actual${NC}\" != \"${YELLOW}$expected${NC}\"\n\n"
+    ((++FAILED))
+    return 1
+  fi
+  printf "${GREEN}✓  CHECK${NC} ${BOLD}$selector${NC}\n"
+  return 0;
+}
+
+assert_notnull_jq() {
+  selector=$1;shift
+  expected=$1;shift
+  actual=$(echo "$TEST_CONTENT" | jq -r "$selector")
+  if [ "$actual" == "null" ]; then
+    printf "${RED}✗  CHECK${NC} ${BOLD}$selector${NC} is null\n"
+    ((++FAILED))
     return 1
   fi
   printf "${GREEN}✓  CHECK${NC} ${BOLD}$selector${NC}\n"
@@ -195,6 +214,11 @@ export TEST_EXPORTED_TOKEN=$token
 put_data=$(cat "$BASEDIR/signed-create.json" | envsubst)
 curl_test 'Create signed plan' 200 'application/json' -XPUT -d "$put_data" localhost:$PORT/plan/$TEST_USER
 
+curl_test 'Get signed plan' 200 'application/json' -H 'Accept: application/json' localhost:$PORT/plan/$TEST_USER \
+  && assert_equal_jq '.plan' 'this is a plan
+that is signed' \
+  && assert_notnull_jq '.signature'
+
 post_data=$(<"$BASEDIR/signed-verify-bad.json")
 curl_test 'Fail to verify with bad pubkey' 200 'application/json' -XPOST -d "$post_data" localhost:$PORT/verify/$TEST_USER \
   && assert_equal_jq '.verified' 0 \
@@ -218,3 +242,4 @@ if [ -f "$BASEDIR/data/test.pid" ]; then
 fi
 
 printf "Tests complete.\n"
+exit $FAILED
