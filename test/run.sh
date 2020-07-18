@@ -106,13 +106,13 @@ curl_test 'Register a new user' 200 'application/json' -XPOST -d "$REQ_DATA" loc
 
 curl_test 'Rate limit registrations' 429 'application/json' -XPOST -d "$REQ_DATA" localhost:$PORT/users/$TEST_USER
 
-token=$(echo "select pw_token from users where email='$TEST_USER'" | sqlite3 "$BASEDIR/data/test.db")
+pw_token=$(echo "select pw_token from users where email='$TEST_USER'" | sqlite3 "$BASEDIR/data/test.db")
 
 curl_test 'Reject bad verification token' 400 'text/html' localhost:$PORT/users/$TEST_USER?token=thisiswrong
 
-curl_test 'Reject bad verification email' 404 'text/html' localhost:$PORT/users/testuser@exmapl3.com?token=$token
+curl_test 'Reject bad verification email' 404 'text/html' localhost:$PORT/users/testuser@exmapl3.com?token=$pw_token
 
-curl_test 'Verify email address' 200 'text/html' localhost:$PORT/users/$TEST_USER?token=$token
+curl_test 'Verify email address' 200 'text/html' localhost:$PORT/users/$TEST_USER?token=$pw_token
 
 curl_test 'Reject incorrect email' 401 'application/json' -u testuser@exampl3.com:test1234 localhost:$PORT/token
 
@@ -164,6 +164,47 @@ curl_test 'Check missing plan in html using accept' 404 'text/html' -H 'Accept: 
 curl_test 'Check missing plan in html using querystring' 404 'text/html' localhost:$PORT/plan/testuser@exampl3.com?format=html
 
 curl_test 'Check missing plan in text by omitting accept' 404 'text/plain' localhost:$PORT/plan/testuser@exampl3.com
+
+curl_test 'Delete authentication token' 200 'application/json' -u $TEST_USER:test1234 -XDELETE localhost:$PORT/token
+
+curl_test 'Reject deleted authentication token' 401 'application/json' -XPUT -d "{\"plan\":\"this should fail\",\"auth\":\"$token\"}" localhost:$PORT/plan/$TEST_USER
+
+curl_test 'Get new authentication token' 200 'application/json' -u $TEST_USER:test1234 localhost:$PORT/token
+
+token=$(echo "$TEST_CONTENT" | jq -r '.token')
+
+curl_test 'Accept new authentication token' 200 'application/json' -XPUT -d "{\"plan\":\"this should not fail\",\"auth\":\"$token\"}" localhost:$PORT/plan/$TEST_USER
+
+curl_test 'Generate password reset token' 200 'text/html' localhost:$PORT/users/$TEST_USER/pwtoken
+
+pw_token=$(echo "select pw_token from users where email='$TEST_USER'" | sqlite3 "$BASEDIR/data/test.db")
+
+curl_test 'Reject invalid password reset token' 400 'application/json' -XPUT -d "{\"password\":\"newpassword\",\"pwtoken\":\"thisiswrong\"}" localhost:$PORT/users/$TEST_USER
+
+curl_test 'Reset password' 200 'application/json' -XPUT -d "{\"password\":\"newpassword\",\"pwtoken\":\"$pw_token\"}" localhost:$PORT/users/$TEST_USER
+
+curl_test 'Reject authentication token after password reset' 401 'application/json' -XPUT -d "{\"plan\":\"this should fail\",\"auth\":\"$token\"}" localhost:$PORT/plan/$TEST_USER
+
+curl_test 'Reject old password' 401 'application/json' -u $TEST_USER:test1234 localhost:$PORT/token
+
+curl_test 'Get authentication token with new password' 200 'application/json' -u $TEST_USER:newpassword localhost:$PORT/token
+
+token=$(echo "$TEST_CONTENT" | jq -r '.token')
+
+export TEST_EXPORTED_TOKEN=$token
+put_data=$(cat "$BASEDIR/signed-create.json" | envsubst)
+curl_test 'Create signed plan' 200 'application/json' -XPUT -d "$put_data" localhost:$PORT/plan/$TEST_USER
+
+post_data=$(<"$BASEDIR/signed-verify-bad.json")
+curl_test 'Fail to verify with bad pubkey' 200 'application/json' -XPOST -d "$post_data" localhost:$PORT/verify/$TEST_USER \
+  && assert_equal_jq '.verified' 0 \
+  && assert_equal_jq '.plan' 'null'
+
+post_data=$(<"$BASEDIR/signed-verify.json")
+curl_test 'Verify signed plan' 200 'application/json' -XPOST -d "$post_data" localhost:$PORT/verify/$TEST_USER \
+  && assert_equal_jq '.verified' 1 \
+  && assert_equal_jq '.plan' 'this is a plan
+that is signed'
 
 ###############
 # Test Teardown
