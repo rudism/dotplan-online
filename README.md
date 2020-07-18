@@ -19,11 +19,11 @@
    - request data: `{"password":"whatever"}`
    - email with validation token will be sent
 - `GET /users/{email}?token={token}` - validate new account
-- `GET /users/{email}/token` - retrieve auth token
+- `GET /token` - retrieve auth token
    - http basic auth
-   - `?expires={date}` sets an explicit expiration, default is 300 seconds from creation
+   - `?expires={minutes}` sets an explicit expiration, default is 5 minutes from creation
    - response data: `{"token":"whatever"}`
-- `DELETE /users/{email}/token` - invalidate current auth token
+- `DELETE /token` - invalidate current auth token
    - http basic auth
 - `GET /users/{email}/pwtoken` - get password change token
    - email with password change token will be sent
@@ -34,17 +34,16 @@
 ### Plans
 
 - `PUT /plan/{email}` - update a plan
-   - request data: `{"plan":"whatever","signature":"whatever"}`
+   - request data: `{"plan":"whatever","signature":"whatever","auth":"token"}`
+   - omitting `plan` from the payload will delete the existing plan
 - `GET /plan/{email}` - retrieve a plan
    - `text/plain` by default - raw plan content
    - `?format=html` or `Accept: text/html` - plan content with html entity encoding for special characters
    - `?format=json` or `Accept: application/json` - response data: `{"plan":"whatever","signature":"whatever"}`
    - `404` if no plan found
+   - `301` redirect if plan is on a different provider
 - `POST /verify/{email}` - verify PGP signature of a plan
    - request data: `{"pgpkey":"public key"}`
    - response data: `{"plan":"whatever","verified":true}` or `{"verified":false}`
-   - 404 if no plan found
-- `POST /multi` - retrieve multiple plans
-   - request data: `{"plans":["user1@email.dom","user2@email.dom"],"pgpkeys":{"user1@email.dom":"public key"}}`
-   - response data: `{"user1@email.dom":{"plan":"whatever","verified":true},"user2@email.dom":{"plan":"whatever","signature":"whatever"}}`
-   - emails with no plan found excluded from response
+   - `404` if no plan found
+   - `308` redirect if plan is on a different provider

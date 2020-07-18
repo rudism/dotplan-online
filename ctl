@@ -12,6 +12,9 @@ killserver() {
 if [ "$cmd" = "run" ]; then
   killserver
   perl server.pl
+elif [ "$cmd" = "daemon" ]; then
+  killserver
+  perl server.pl -d
 elif [ "$cmd" = "kill" ]; then
   killserver
 elif [ "$cmd" = "initdb" ]; then

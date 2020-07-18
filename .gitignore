@@ -1,2 +1,4 @@
 dotplan.pid
+dotplan.log
 *.db
+plans/*
