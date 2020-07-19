@@ -55,6 +55,7 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
   use File::Temp qw(tempfile);
   use Fcntl qw(:flock);
   use Net::DNS::Resolver;
+  use Crypt::Random qw(makerandom_itv);
   use Crypt::Eksblowfish::Bcrypt qw(bcrypt_hash en_base64);
   use MIME::Base64 qw(decode_base64);
   use POSIX qw(strftime);
@@ -92,7 +93,7 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
   sub handle_request {
     my ($self, $cgi) = @_;
     # assign a random request id for anonymous logging
-    my $req_id = util_req_id();
+    my $req_id = util_token(12);
     $cgi->param('request_id', $req_id);
     my $path = $cgi->path_info();
     my $method = $cgi->request_method();
@@ -206,7 +207,7 @@ EOF
             : "INSERT INTO users (password, pw_token, pw_token_expires, email) values (?, ?, datetime('now', '+$pw_token_expiration_minutes minutes'), ?)";
           my $crypted = util_bcrypt($password);
           my $sth = util_get_dbh()->prepare($query);
-          $sth->execute($crypted, util_token(), $email);
+          $sth->execute($crypted, util_token(24), $email);
           die $sth->errstr if $sth->err;
           # TODO: send email
           print_json_response($cgi, 200, {email => $email});
@@ -244,10 +245,10 @@ EOF
       print_response($cgi, 401, $not_authorized);
     } else {
       my $sth = util_get_dbh()->prepare("UPDATE users SET token=?, token_expires=datetime('now', ?) WHERE email=?");
-      my $token = util_token();
+      my $token = util_token(24);
       my $expires = $cgi->param('expires');
       my $minutes = $auth_token_default_expiration_minutes;
-      if ($expires =~ /^\d+$/) {
+      if (defined $expires && $expires =~ /^\d+$/) {
         $minutes = int($expires);
         if ($minutes <= 0) {
           $minutes = $auth_token_default_expiration_minutes;
@@ -282,7 +283,7 @@ EOF
     } elsif (defined $user->{'pw_token_expires'} && $user->{'pw_token_expires'} >= time) {
       print_json_response($cgi, 429, {error => "Wait $pw_token_expiration_minutes between this type of request."});
     } else {
-      my $token = util_token();
+      my $token = util_token(24);
       my $sth = util_get_dbh()->prepare("UPDATE users SET pw_token=?, pw_token_expires=datetime('now', '+10 minutes') WHERE email=?");
       $sth->execute($token, $email);
       die $sth->errstr if $sth->err;
@@ -426,7 +427,7 @@ EOF
     my $msg = shift;
     my $timestamp = strftime("%Y-%m-%d %H:%M:%S", localtime(time()));
     if (!defined $_log) {
-      open($_log, '>>', $log_file);
+      open($_log, '>>', $log_file) or die $!;
       binmode($_log, ':unix');
     }
     print $_log "$timestamp $msg\n";
@@ -470,7 +471,7 @@ EOF
   sub util_salt {
     my $itoa64 = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     my $salt = '';
-    $salt .= substr($itoa64,int(rand(64)),1) while length($salt) < 16;
+    $salt .= substr($itoa64,int(makerandom_itv(Strength => 0, Upper => 64)),1) while length($salt) < 16;
     return $salt;
   }
 
@@ -504,18 +505,11 @@ EOF
 
   # generate an authorization token
   sub util_token {
-    my $itoa62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    my $length = shift;
+    my $chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     my $token = '';
-    $token .= substr($itoa62,int(rand(62)),1) while length($token) < 24;
+    $token .= substr($chars,int(makerandom_itv(Strength => 0, Upper => 62)),1) while length($token) < $length;
     return $token;
-  }
-
-  # generate a random request id
-  sub util_req_id {
-    my $itoa36 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    my $id = '';
-    $id .= substr($itoa36,int(rand(36)),1) while length($id) < 8;
-    return $id;
   }
 
   # get a user from the database by email
@@ -564,7 +558,7 @@ EOF
 
       if (-f "$basename.plan") {
         my $details = {};
-        open(my $plan_file, '<', "$basename.plan");
+        open(my $plan_file, '<', "$basename.plan") or die $!;
         flock($plan_file, LOCK_SH);
         my $mtime = (stat($plan_file))[9];
         my $timestamp = strftime("%a, %d %b %Y %H:%M:%S %z", localtime($mtime));
@@ -574,7 +568,7 @@ EOF
         close($plan_file);
 
         if (-f "$basename.asc") {
-          open(my $sig_file, '<', "$basename.asc");
+          open(my $sig_file, '<', "$basename.asc") or die $!;
           flock($sig_file, LOCK_SH);
           local $/;
           $details->{'signature'} = <$sig_file>;

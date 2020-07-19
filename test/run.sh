@@ -108,7 +108,7 @@ if [ -z "$USE_DOCKER" ]; then
   DATABASE="$BASEDIR/data/test.db" \
   PLAN_DIR="$BASEDIR/data/plans" \
   SENDMAIL=/usr/bin/true \
-  perl "$BASEDIR/../server.pl" -d >>/dev/null 2>>/dev/null
+  perl "$BASEDIR/../server.pl" -d >>/dev/null
 else
   docker build -t dotplan-online-test "$BASEDIR/.."
   docker run --name dotplan_online_test -d --rm \
