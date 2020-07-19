@@ -195,7 +195,7 @@ EOF
       if (defined $user && $user->{'verified'}) {
         print_json_response($cgi, 400, {error => 'User already exists.'});
       } elsif (defined $user && defined $user->{'pw_token_expires'} && $user->{'pw_token_expires'} >= time) {
-        print_json_response($cgi, 429, {error => "Please wait up to $pw_token_expiration_minutes minutes and try again."});
+        print_json_response($cgi, 429, {error => "Wait $pw_token_expiration_minutes minutes between this type of request."});
       } else {
         my $password = util_json_body($cgi)->{'password'};
         if (!defined $password || length($password) < $minimum_password_length) {
@@ -330,7 +330,7 @@ EOF
         print_response($cgi, 401, $not_authorized);
       } elsif (length($plan) > $maximum_plan_length) {
         print_json_response($cgi, 400, {error => "Plan exceeds maximum length of $maximum_plan_length."});
-      } elsif (length($signature) > $maximum_signature_length) {
+      } elsif (defined $signature && length($signature) > $maximum_signature_length) {
         print_json_response($cgi, 400, {error => "Signature exceeds maximum length of $maximum_signature_length."});
       } else {
         util_save_plan($email, $plan, $signature);
@@ -535,7 +535,7 @@ EOF
     my $basename = "$plan_dir/" . shell_quote($email);
 
     if (defined $plan) {
-      open(my $plan_file, '>', "$basename.plan");
+      open(my $plan_file, '>', "$basename.plan") or die $!;
       flock($plan_file, LOCK_EX);
       print $plan_file $plan;
       close($plan_file);
@@ -544,7 +544,7 @@ EOF
     }
 
     if (defined $plan && defined $signature) {
-      open(my $sig_file, '>', "$basename.asc");
+      open(my $sig_file, '>', "$basename.asc") or die $!;
       flock($sig_file, LOCK_EX);
       print $sig_file $signature;
       close($sig_file);
