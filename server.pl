@@ -101,11 +101,9 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
     eval {
       util_log("REQ $req_id $method $path");
       if ($method eq 'GET') {
-        if ($path =~ /^\/users\/([^\/]{$minimum_email_length,$maximum_email_length})$/) {
-          validate_email($1, $cgi);
-        } elsif ($path =~ /^\/token$/) {
+        if ($path =~ /^\/token$/) {
           get_token($cgi);
-        } elsif ($path =~ /^\/users\/([^\/]{$minimum_email_length,$maximum_email_length})\/pwtoken$/) {
+        } elsif ($path =~ /^\/users\/([^\/]{$minimum_email_length,$maximum_email_length})\/pwchange$/) {
           get_pwtoken($1, $cgi);
         } elsif ($path =~ /^\/plan\/([^\/]{$minimum_email_length,$maximum_email_length})$/) {
           get_plan($1, $cgi);
@@ -122,6 +120,8 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
         }
       } elsif ($method eq 'PUT') {
         if ($path =~ /^\/users\/([^\/]{$minimum_email_length,$maximum_email_length})$/) {
+          validate_email($1, $cgi);
+        } elsif ($path =~ /^\/users\/([^\/]{$minimum_email_length,$maximum_email_length})\/pwchange$/) {
           update_password($1, $cgi);
         } elsif ($path =~ /^\/plan\/([^\/]{$minimum_email_length,$maximum_email_length})$/) {
           update_plan($1, $cgi);
@@ -181,24 +181,6 @@ EOF
     print_response($cgi, $code, encode_json($data));
   }
 
-  sub print_html_response {
-    # TODO: external template
-    my ($cgi, $code, $content) = @_;
-    print_response($cgi, $code, <<EOF
-<!doctype html>
-<html lang='en'>
-  <head>
-    <title>Dotplan Online</title>
-    <meta charset='utf-8'>
-  </head>
-  <body>
-  <p>$content</p>
-  </body>
-</html>
-EOF
-    , 'text/html');
-  }
-
   ####################
   # API Implementation
   ####################
@@ -236,20 +218,20 @@ EOF
   ##### GET /users/{email}?token={token}
   sub validate_email {
     my ($email, $cgi) = @_;
-    my $token = $cgi->param('token');
+    my $token = util_json_body($cgi)->{'token'};
     if (!defined $token) {
-      print_html_response($cgi, 400, 'No token found in request.');
+      print_json_response($cgi, 400, {error => 'Missing token.'});
     } else {
       my $user = util_get_user($email);
       if (!defined $user || $user->{'verified'}) {
-        print_html_response($cgi, 404, 'User not found.');
+        print_response($cgi, 404, $not_found);
       } elsif ($user->{'pw_token'} ne $token) {
-        print_html_response($cgi, 400, 'Bad or expired token.');
+        print_response($cgi, 401, $not_authorized);
       } else {
         my $sth = util_get_dbh()->prepare('UPDATE users SET verified=1, pw_token=null, pw_token_expires=null WHERE email=?');
         $sth->execute($email);
         die $sth->errstr if $sth->err;
-        print_html_response($cgi, 200, 'Your email address has been verified.');
+        print_json_response($cgi, 200, {success => 1});
       }
     }
   }
@@ -296,16 +278,16 @@ EOF
     my ($email, $cgi) = @_;
     my $user = util_get_user($email);
     if (!defined $user || !$user->{'verified'}) {
-      print_html_response($cgi, 404, 'User not found.');
+      print_response($cgi, 404, $not_found);
     } elsif (defined $user->{'pw_token_expires'} && $user->{'pw_token_expires'} >= time) {
-      print_html_response($cgi, 429, "Please wait up to $pw_token_expiration_minutes minutes and try again.");
+      print_json_response($cgi, 429, {error => "Wait $pw_token_expiration_minutes between this type of request."});
     } else {
       my $token = util_token();
       my $sth = util_get_dbh()->prepare("UPDATE users SET pw_token=?, pw_token_expires=datetime('now', '+10 minutes') WHERE email=?");
       $sth->execute($token, $email);
       die $sth->errstr if $sth->err;
       # TODO: send email
-      print_html_response($cgi, 200, 'Check your email and follow the instructions to change your password.');
+      print_json_response($cgi, 200, {success => 1});
     }
   }
 
@@ -318,7 +300,7 @@ EOF
     } else {
       my $body = util_json_body($cgi);
       my $password = $body->{'password'};
-      my $pwtoken = $body->{'pwtoken'};
+      my $pwtoken = $body->{'token'};
       if (!defined $pwtoken || !defined $user->{'pw_token'} || !defined $user->{'pw_token_expires'} || $pwtoken ne $user->{'pw_token'} || $user->{'pw_token_expires'} < time) {
         print_json_response($cgi, 400, {error => 'Bad or expired token.'});
       } elsif (!defined $password || length($password) < $minimum_password_length) {
@@ -383,7 +365,7 @@ EOF
       if ($format eq 'application/json') {
         print_response($cgi, 404, $not_found);
       } elsif ($format eq 'text/html') {
-        print_html_response($cgi, 404, 'No plan found.');
+        print_response($cgi, 404, '', 'text/html');
       } else {
         print_response($cgi, 404, '', 'text/plain');
       }
@@ -414,10 +396,8 @@ EOF
           (IPC::Run::run ['gpg2', '--dearmor'], '<', $keyfile, '>', "$keyfile.gpg", '2>>', '/dev/null') &&
           (IPC::Run::run ['gpg2', '--no-default-keyring', '--keyring', "$keyfile.gpg", '--verify', "$basename.asc", "$basename.plan"], '>', '/dev/null', '2>>', '/dev/null')
         ) {
-          print_json_response($cgi, 200, {
-            plan => $plan->{'plan'},
-            verified => 1
-          });
+          $plan->{'verified'} = 1;
+          print_json_response($cgi, 200, $plan);
         } else {
           print_json_response($cgi, 200, {verified => 0});
         }
@@ -586,6 +566,9 @@ EOF
         my $details = {};
         open(my $plan_file, '<', "$basename.plan");
         flock($plan_file, LOCK_SH);
+        my $mtime = (stat($plan_file))[9];
+        my $timestamp = strftime("%a, %d %b %Y %H:%M:%S %z", localtime($mtime));
+        $details->{'timestamp'} = $timestamp;
         local $/;
         $details->{'plan'} = <$plan_file>;
         close($plan_file);

@@ -76,10 +76,11 @@ assert_equal_jq() {
   return 0;
 }
 
-assert_notnull_jq() {
+assert_notequal_jq() {
   selector=$1;shift
+  expected=$1;shift
   actual=$(echo "$TEST_CONTENT" | jq -r "$selector")
-  if [ "$actual" == "null" ]; then
+  if [ "$actual" == "$expected" ]; then
     printf "${RED}✗  CHECK${NC} ${BOLD}$selector${NC} is null\n"
     ((++FAILED))
     return 1
@@ -139,11 +140,14 @@ curl_test 'Rate limit registrations' 429 'application/json' -XPOST -d "$REQ_DATA
 
 pw_token=$(echo "select pw_token from users where email='$TEST_USER'" | sqlite3 "$BASEDIR/data/test.db")
 
-curl_test 'Reject bad verification token' 400 'text/html' localhost:$PORT/users/$TEST_USER?token=thisiswrong
+curl_test 'Reject bad verification token' 401 'application/json' -XPUT -d "{\"token\":\"thisiswrong\"}" localhost:$PORT/users/$TEST_USER \
+  && assert_notequal_jq '.success' 1
 
-curl_test 'Reject bad verification email' 404 'text/html' localhost:$PORT/users/testuser@exmapl3.com?token=$pw_token
+curl_test 'Reject bad verification email' 404 'application/json' -XPUT -d "{\"token\":\"$pw_token\"}" localhost:$PORT/users/testuser@exmapl3.com \
+  && assert_notequal_jq '.success' 1
 
-curl_test 'Verify email address' 200 'text/html' localhost:$PORT/users/$TEST_USER?token=$pw_token
+curl_test 'Verify email address' 200 'application/json' -XPUT -d "{\"token\":\"$pw_token\"}" localhost:$PORT/users/$TEST_USER \
+  && assert_equal_jq '.success' 1
 
 curl_test 'Reject incorrect email' 401 'application/json' -u testuser@exampl3.com:test1234 localhost:$PORT/token
 
@@ -206,13 +210,15 @@ token=$(echo "$TEST_CONTENT" | jq -r '.token')
 
 curl_test 'Accept new authentication token' 200 'application/json' -XPUT -d "{\"plan\":\"this should not fail\",\"auth\":\"$token\"}" localhost:$PORT/plan/$TEST_USER
 
-curl_test 'Generate password reset token' 200 'text/html' localhost:$PORT/users/$TEST_USER/pwtoken
+curl_test 'Generate password reset token' 200 'application/json' localhost:$PORT/users/$TEST_USER/pwchange \
+  && assert_equal_jq '.success' 1
 
 pw_token=$(echo "select pw_token from users where email='$TEST_USER'" | sqlite3 "$BASEDIR/data/test.db")
 
-curl_test 'Reject invalid password reset token' 400 'application/json' -XPUT -d "{\"password\":\"newpassword\",\"pwtoken\":\"thisiswrong\"}" localhost:$PORT/users/$TEST_USER
+curl_test 'Reject invalid password reset token' 400 'application/json' -XPUT -d "{\"password\":\"newpassword\",\"token\":\"thisiswrong\"}" localhost:$PORT/users/$TEST_USER/pwchange
 
-curl_test 'Reset password' 200 'application/json' -XPUT -d "{\"password\":\"newpassword\",\"pwtoken\":\"$pw_token\"}" localhost:$PORT/users/$TEST_USER
+curl_test 'Reset password' 200 'application/json' -XPUT -d "{\"password\":\"newpassword\",\"token\":\"$pw_token\"}" localhost:$PORT/users/$TEST_USER/pwchange \
+  && assert_equal_jq '.success' 1
 
 curl_test 'Reject authentication token after password reset' 401 'application/json' -XPUT -d "{\"plan\":\"this should fail\",\"auth\":\"$token\"}" localhost:$PORT/plan/$TEST_USER
 
@@ -229,7 +235,7 @@ curl_test 'Create signed plan' 200 'application/json' -XPUT -d "$put_data" local
 curl_test 'Get signed plan' 200 'application/json' -H 'Accept: application/json' localhost:$PORT/plan/$TEST_USER \
   && assert_equal_jq '.plan' 'this is a plan
 that is signed' \
-  && assert_notnull_jq '.signature'
+  && assert_notequal_jq '.signature' 'null'
 
 post_data=$(<"$BASEDIR/signed-verify-bad.json")
 curl_test 'Fail to verify with bad pubkey' 200 'application/json' -XPOST -d "$post_data" localhost:$PORT/verify/$TEST_USER \
