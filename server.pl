@@ -14,7 +14,7 @@ my $pid_file = $ENV{'PID_FILE'} || './data/dotplan.pid';
 my $log_file = $ENV{'LOG_FILE'} || './data/dotplan.log';
 my $database = $ENV{'DATABASE'} || './data/users.db';
 my $plan_dir = $ENV{'PLAN_DIR'} || './data/plans';
-my $sendmail = $ENV{'SENDMAIL'} || '/usr/bin/sendmail';
+my $sendmail = $ENV{'SENDMAIL'} || '/usr/bin/true';
 
 my $pw_token_expiration_minutes = $ENV{'PW_TOKEN_EXPIRATION_MINUTES'} || 10;
 my $auth_token_default_expiration_minutes = $ENV{'AUTH_TOKEN_DEFAULT_EXPIRATION_MINUTES'} || 5;
@@ -26,6 +26,7 @@ my $maximum_signature_length = $ENV{'MAXIMUM_SIGNATURE_LENGTH'} || 1024;
 my $maximum_pubkey_length = $ENV{'MAXIMUM_PUBKEY_LENGTH'} || 5125;
 
 my $hostname = $ENV{'HOSTNAME'};
+my $from_address = $ENV{'MAIL_FROM'} || "do-not-reply\@$hostname";
 my $localdomains = {};
 if (defined $ENV{'LOCAL_DOMAINS'}) {
   $localdomains->{$_}++ for (split(/,/, $ENV{'LOCAL_DOMAINS'}));
@@ -207,9 +208,13 @@ EOF
             : "INSERT INTO users (password, pw_token, pw_token_expires, email) values (?, ?, datetime('now', '+$pw_token_expiration_minutes minutes'), ?)";
           my $crypted = util_bcrypt($password);
           my $sth = util_get_dbh()->prepare($query);
-          $sth->execute($crypted, util_token(24), $email);
+          my $token = util_token(24);
+          $sth->execute($crypted, $token, $email);
           die $sth->errstr if $sth->err;
-          # TODO: send email
+          util_sendmail($email, '[DOTPLAN] Verify your email',
+            "Please verify your email address.\n" .
+            "Click the following link or copy it into your browser:\n" .
+            "https://$hostname/static/verify?token=$token");
           print_json_response($cgi, 200, {email => $email});
         }
       }
@@ -287,7 +292,11 @@ EOF
       my $sth = util_get_dbh()->prepare("UPDATE users SET pw_token=?, pw_token_expires=datetime('now', '+10 minutes') WHERE email=?");
       $sth->execute($token, $email);
       die $sth->errstr if $sth->err;
-      # TODO: send email
+      util_sendmail($email, '[DOTPLAN] Password reset request',
+        "Someone (hopefully you) has requested to change your password.\n" .
+        "If it wasn't you, you can ignore and delete this email.\n\n" .
+        "Otherwise, click the following link or copy it into your browser:\n" .
+        "https://$hostname/static/change-password?token=$token");
       print_json_response($cgi, 200, {success => 1});
     }
   }
@@ -433,6 +442,24 @@ EOF
     print $_log "$timestamp $msg\n";
   }
 
+  # send an email
+  sub util_sendmail {
+    my $recipient = shift;
+    my $subject = shift;
+    my $body = shift;
+
+    my $email = <<EOF;
+To: $recipient
+From: $from_address
+Subject: $subject
+
+$body
+EOF
+
+    (IPC::Run::run [$sendmail, $recipient], \$email) || die $!;
+  }
+
+  # get mime type for response from querystring and accept header
   sub util_get_response_format {
     my $cgi = shift;
     my $accept = $cgi->http('Accept');
