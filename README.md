@@ -23,6 +23,7 @@ Any dotplan implementation should expose at least the following two endpoints:
       - `timestamp` - when this plan was created
    - `404` if no plan found
    - `301` redirect if domain SRV record indicates plan is on a different dotplan provider
+      - This is optional for servers to act as relays, in practice the client should look up the SRV record itself
 - `POST /verify/{email}` - verify PGP signature of a plan
    - request json data:
       - `pubkey` - ascii armored public PGP key to verify the signature with
@@ -32,6 +33,7 @@ Any dotplan implementation should expose at least the following two endpoints:
    - `403` if server-side verification is not supported
    - `404` if no plan found
    - `308` redirect if domain SRV record indicates plan is on a different dotplan provider.
+      - This is optional for servers to act as relays, in practice the client should look up the SRV record itself.
 
 ### Authentication
 
