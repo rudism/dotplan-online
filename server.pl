@@ -15,6 +15,7 @@ my $log_file = $ENV{'LOG_FILE'} || './data/dotplan.log';
 my $database = $ENV{'DATABASE'} || './data/users.db';
 my $plan_dir = $ENV{'PLAN_DIR'} || './data/plans';
 my $sendmail = $ENV{'SENDMAIL'} || '/usr/bin/true';
+my @sendmail_args = split(/,/, $ENV{'SENDMAIL_ARGS'});
 
 my $pw_token_expiration_minutes = $ENV{'PW_TOKEN_EXPIRATION_MINUTES'} || 10;
 my $auth_token_default_expiration_minutes = $ENV{'AUTH_TOKEN_DEFAULT_EXPIRATION_MINUTES'} || 5;
@@ -25,7 +26,7 @@ my $maximum_plan_length = $ENV{'MAXIMUM_PLAN_LENGTH'} || 4096;
 my $maximum_signature_length = $ENV{'MAXIMUM_SIGNATURE_LENGTH'} || 1024;
 my $maximum_pubkey_length = $ENV{'MAXIMUM_PUBKEY_LENGTH'} || 5125;
 
-my $hostname = $ENV{'HOSTNAME'};
+my $hostname = $ENV{'HOSTNAME'} || '';
 my $from_address = $ENV{'MAIL_FROM'} || "do-not-reply\@$hostname";
 my $localdomains = {};
 if (defined $ENV{'LOCAL_DOMAINS'}) {
@@ -398,14 +399,10 @@ EOF
       } elsif (length($pubkey) > $maximum_pubkey_length) {
         print_json_response($cgi, 400, {error => "Pubkey exceeds maximum length of $maximum_pubkey_length."});
       } else {
-        my ($keyfh, $keyfile) = tempfile('tmpXXXXXX', TMPDIR => 1);
-        print $keyfh $pubkey;
-        close($keyfh);
+        my (undef, $keyfile) = tempfile('tmpXXXXXX', SUFFIX => '.gpg', TMPDIR => 1, OPEN => 0);
         my $basename = "$plan_dir/" . shell_quote($email);
-        if(
-          (IPC::Run::run ['gpg2', '--dearmor'], '<', $keyfile, '>', "$keyfile.gpg", '2>>', '/dev/null') &&
-          (IPC::Run::run ['gpg2', '--no-default-keyring', '--keyring', "$keyfile.gpg", '--verify', "$basename.asc", "$basename.plan"], '>', '/dev/null', '2>>', '/dev/null')
-        ) {
+        IPC::Run::run ['gpg2', '--dearmor'], \$pubkey, '>', $keyfile, '2>>', '/dev/null' or die "gpg2 exited with $?";
+        if(IPC::Run::run ['gpg2', '--no-default-keyring', '--keyring', "$keyfile", '--verify', "$basename.asc", "$basename.plan"], '>', '/dev/null', '2>>', '/dev/null') {
           $plan->{'verified'} = 1;
           print_json_response($cgi, 200, $plan);
         } else {
@@ -456,7 +453,10 @@ Subject: $subject
 $body
 EOF
 
-    (IPC::Run::run [$sendmail, $recipient], \$email) || die $!;
+    my @arg = ($sendmail);
+    push @arg, @sendmail_args;
+    push @arg, $recipient;
+    IPC::Run::run \@arg, \$email, '>>', '/dev/null', '2>>', '/dev/null' or die "sendmail exited with $?";
   }
 
   # get mime type for response from querystring and accept header
