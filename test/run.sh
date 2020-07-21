@@ -55,11 +55,11 @@ assert_equal() {
   actual=$1;shift
   expected=$1;shift
   if [ "$actual" != "$expected" ]; then
-    printf "${RED}✗  CHECK${NC} ${BOLD}$check_name${NC}\n\n\"${YELLOW}"; echo -n "$actual"; printf "${NC}\" != \"${YELLOW}"; echo -n "$expected"; printf "${NC}\"\n\n"
+    printf "${RED}✗ CHECK${NC} ${BOLD}$check_name${NC}\n\n\"${YELLOW}"; echo -n "$actual"; printf "${NC}\" != \"${YELLOW}"; echo -n "$expected"; printf "${NC}\"\n\n"
     ((++FAILED))
     return 1
   fi
-  printf "${GREEN}✓  CHECK${NC} ${BOLD}$check_name${NC}\n"
+  printf "${GREEN}✓ CHECK${NC} ${BOLD}$check_name${NC}\n"
   return 0;
 }
 
@@ -68,11 +68,11 @@ assert_equal_jq() {
   expected=$1;shift
   actual=$(echo "$TEST_CONTENT" | jq -r "$selector")
   if [ "$actual" != "$expected" ]; then
-    printf "${RED}✗  CHECK${NC} ${BOLD}$selector${NC}\n\n\"${YELLOW}"; echo -n "$actual"; printf "${NC}\" != \"${YELLOW}"; echo -n "$expected"; printf "${NC}\"\n\n"
+    printf "${RED}✗ CHECK${NC} ${BOLD}$selector${NC}\n\n\"${YELLOW}"; echo -n "$actual"; printf "${NC}\" != \"${YELLOW}"; echo -n "$expected"; printf "${NC}\"\n\n"
     ((++FAILED))
     return 1
   fi
-  printf "${GREEN}✓  CHECK${NC} ${BOLD}$selector${NC}\n"
+  printf "${GREEN}✓ CHECK${NC} ${BOLD}$selector${NC}\n"
   return 0;
 }
 
@@ -81,11 +81,11 @@ assert_notequal_jq() {
   expected=$1;shift
   actual=$(echo "$TEST_CONTENT" | jq -r "$selector")
   if [ "$actual" == "$expected" ]; then
-    printf "${RED}✗  CHECK${NC} ${BOLD}$selector${NC}\n\n\"${YELLOW}"; echo -n "$selector"; printf "${NC}\" = \"${YELLOW}"; echo -n "$expected"; printf "${NC}\"\n\n"
+    printf "${RED}✗ CHECK${NC} ${BOLD}$selector${NC}\n\n\"${YELLOW}"; echo -n "$selector"; printf "${NC}\" = \"${YELLOW}"; echo -n "$expected"; printf "${NC}\"\n\n"
     ((++FAILED))
     return 1
   fi
-  printf "${GREEN}✓  CHECK${NC} ${BOLD}$selector${NC}\n"
+  printf "${GREEN}✓ CHECK${NC} ${BOLD}$selector${NC}\n"
   return 0;
 }
 
@@ -94,11 +94,11 @@ assert_exists() {
   dir=$1;shift
   file=$1;shift
   if [ ! -e "$BASEDIR/$dir/$file" ]; then
-    printf "${RED}✗  CHECK${NC} ${BOLD}$check_name${NC}\n\n\"${YELLOW}"; echo -n "$BASEDIR/$dir/$file"; printf "${NC}\" does not exist\n\n"
+    printf "${RED}✗ CHECK${NC} ${BOLD}$check_name${NC}\n\n\"${YELLOW}"; echo -n "$BASEDIR/$dir/$file"; printf "${NC}\" does not exist\n\n"
     ((++FAILED))
     return 1
   fi
-  printf "${GREEN}✓  CHECK${NC} ${BOLD}$check_name${NC}\n"
+  printf "${GREEN}✓ CHECK${NC} ${BOLD}$check_name${NC}\n"
   return 0;
 }
 
@@ -107,11 +107,11 @@ assert_not_exists() {
   dir=$1;shift
   file=$1;shift
   if [ -e "$BASEDIR/$dir/$file" ]; then
-    printf "${RED}✗  CHECK${NC} ${BOLD}$check_name${NC}\n\n\"${YELLOW}"; echo -n "$BASEDIR/$dir/$file"; printf "${NC}\" exists\n\n"
+    printf "${RED}✗ CHECK${NC} ${BOLD}$check_name${NC}\n\n\"${YELLOW}"; echo -n "$BASEDIR/$dir/$file"; printf "${NC}\" exists\n\n"
     ((++FAILED))
     return 1
   fi
-  printf "${GREEN}✓  CHECK${NC} ${BOLD}$check_name${NC}\n"
+  printf "${GREEN}✓ CHECK${NC} ${BOLD}$check_name${NC}\n"
   return 0;
 }
 

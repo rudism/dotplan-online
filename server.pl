@@ -41,6 +41,8 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
   package DotplanApi;
   use base qw(HTTP::Server::Simple::CGI);
   sub net_server { 'Net::Server::Fork' }
+  use HTTP::Server::Simple::Static;
+  my $webroot = './static';
 
   # Caching DNS resolver
   {
@@ -62,7 +64,7 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
   use MIME::Base64 qw(decode_base64);
   use POSIX qw(strftime);
   use JSON qw(encode_json decode_json);
-  use URI::Escape qw(uri_escape);
+  use URI::Escape qw(uri_escape uri_unescape);
   use HTML::Entities qw(encode_entities);
   use File::Spec::Functions qw(catfile);
 
@@ -78,6 +80,7 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
   my $resp_header = {
     200 => 'OK',
     301 => 'Moved Permanently',
+    304 => 'Not Modified',
     308 => 'Permanent Redirect',
     400 => 'Bad Request',
     401 => 'Unauthorized',
@@ -98,6 +101,8 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
     my $req_id = util_token(12);
     $cgi->param('request_id', $req_id);
     my $path = $cgi->path_info();
+    $path =~ s{^https?://([^/:]+)(:\d+)?/}{/};
+    $cgi->{'.path_info'} = '/index.html' if $path eq '/';
     my $method = $cgi->request_method();
     my $host = $cgi->http('X-Forwarded-For') || $cgi->remote_addr();
 
@@ -110,7 +115,13 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
           get_pwtoken($1, $cgi);
         } elsif ($path =~ /^\/plan\/([^\/]{$minimum_email_length,$maximum_email_length})$/) {
           get_plan($1, $cgi);
-        } else {
+        } elsif (!$self->serve_static($cgi, $webroot)) {
+          print_response($cgi, 404, $not_found);
+        }
+      } elsif ($method eq 'HEAD') {
+        if ($path =~ /^\/plan\/([^\/]{$minimum_email_length,$maximum_email_length})$/) {
+          get_plan($1, $cgi);
+        } elsif (!$self->serve_static($cgi, $webroot)) {
           print_response($cgi, 404, $not_found);
         }
       } elsif ($method eq 'POST') {
@@ -152,7 +163,7 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
   ##################
 
   sub print_response {
-    my ($cgi, $code, $body, $type, $redirect) = @_;
+    my ($cgi, $code, $body, $type, $redirect, $mtime) = @_;
     my $req_id = $cgi->param('request_id');
     my $path = $cgi->path_info();
     my $method = $cgi->request_method();
@@ -164,15 +175,21 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
       $type = 'application/json';
     }
     my $length = length($body);
-    my $date = strftime("%a, %d %b %Y %H:%M:%S %z", localtime(time()));
+    my $now = time;
+    my $date = HTTP::Date::time2str($now);
     my $redirect_header = '';
     if (defined $redirect) {
       $redirect_header = "\nLocation: $redirect";
     }
+    my $mtime_header = '';
+    if (defined $mtime) {
+      $mtime = $now if $mtime > $now;
+      $mtime_header = "\nModified-Date: " . HTTP::Date::time2str($mtime);
+    }
     print <<EOF;
 HTTP/1.1 $code $header
 Server: DotplanApi
-Date: $date
+Date: $date$mtime_header
 Content-Type: $type
 Content-Length: $length$redirect_header
 EOF
@@ -215,7 +232,7 @@ EOF
           util_sendmail($email, '[DOTPLAN] Verify your email',
             "Please verify your email address.\n" .
             "Click the following link or copy it into your browser:\n" .
-            "https://$hostname/static/verify?token=$token");
+            "https://$hostname/verify.html?token=$token");
           print_json_response($cgi, 200, {email => $email});
         }
       }
@@ -297,7 +314,7 @@ EOF
         "Someone (hopefully you) has requested to change your password.\n" .
         "If it wasn't you, you can ignore and delete this email.\n\n" .
         "Otherwise, click the following link or copy it into your browser:\n" .
-        "https://$hostname/static/change-password?token=$token");
+        "https://$hostname/change-password.html?token=$token");
       print_json_response($cgi, 200, {success => 1});
     }
   }
@@ -361,17 +378,29 @@ EOF
       # found external plan service, redirect request
       print_response($cgi, 301, encode_json({location => $plan->{'redirect'}}), 'application/json', $plan->{'redirect'});
     } elsif (defined $plan) {
-      # found local plan, render response
-      my $body;
-      if ($format eq 'application/json') {
-        $body = encode_json($plan);
-      } elsif ($format eq 'text/html') {
-        $body = encode_entities($plan->{'plan'});
-        $body =~ s/\n/<br>\n/g;
+      # found local plan, check modified
+      my $now = time;
+      my $mtime = $plan->{'mtime'};
+      my $ifmod = $cgi->http('If-Modified-Since');
+      my $ifmtime = HTTP::Date::str2time($ifmod) if defined $ifmod;
+      if (defined $mtime && defined $ifmtime && $ifmtime <= $now && $mtime <= $ifmtime) {
+        print_response($cgi, 304, '', $format, undef, $mtime);
       } else {
-        $body = $plan->{'plan'};
+        # render response
+        my $body = '';
+        delete $plan->{'mtime'};
+        if ($cgi->request_method() ne 'HEAD') {
+          if ($format eq 'application/json') {
+            $body = encode_json($plan);
+          } elsif ($format eq 'text/html') {
+            $body = encode_entities($plan->{'plan'});
+            $body =~ s/\n/<br>\n/g;
+          } else {
+            $body = $plan->{'plan'};
+          }
+        }
+        print_response($cgi, 200, $body, $format, undef, $mtime);
       }
-      print_response($cgi, 200, $body, $format);
     } else {
       if ($format eq 'application/json') {
         print_response($cgi, 404, $not_found);
@@ -588,7 +617,8 @@ EOF
         open(my $plan_file, '<', "$basename.plan") or die $!;
         flock($plan_file, LOCK_SH);
         my $mtime = (stat($plan_file))[9];
-        my $timestamp = strftime("%a, %d %b %Y %H:%M:%S %z", localtime($mtime));
+        my $timestamp = HTTP::Date::time2str(localtime($mtime));
+        $details->{'mtime'} = $mtime;
         $details->{'timestamp'} = $timestamp;
         local $/;
         $details->{'plan'} = <$plan_file>;
