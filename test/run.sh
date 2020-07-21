@@ -181,7 +181,7 @@ curl_test 'Get authentication token' 200 'application/json' -u $TEST_USER:test12
 
 token=$(echo "$TEST_CONTENT" | jq -r '.token')
 
-curl_test 'No plan by default' 404 'text/plain' localhost:$PORT/plan/$TEST_USER
+curl_test 'No plan by default' 404 '' localhost:$PORT/plan/$TEST_USER
 
 curl_test 'Reject bad authentication token' 401 'application/json' -XPUT -d '{"plan":"something","auth":"wrong"}' localhost:$PORT/plan/$TEST_USER
 
@@ -218,11 +218,11 @@ curl_test 'Check missing plan in json using accept' 404 'application/json' -H 'A
 
 curl_test 'Check missing plan in json using querystring' 404 'application/json' localhost:$PORT/plan/testuser@exampl3.com?format=json
 
-curl_test 'Check missing plan in html using accept' 404 'text/html' -H 'Accept: text/html' localhost:$PORT/plan/testuser@exampl3.com
+curl_test 'Check missing plan in html using accept' 404 '' -H 'Accept: text/html' localhost:$PORT/plan/testuser@exampl3.com
 
-curl_test 'Check missing plan in html using querystring' 404 'text/html' localhost:$PORT/plan/testuser@exampl3.com?format=html
+curl_test 'Check missing plan in html using querystring' 404 '' localhost:$PORT/plan/testuser@exampl3.com?format=html
 
-curl_test 'Check missing plan in text by omitting accept' 404 'text/plain' localhost:$PORT/plan/testuser@exampl3.com
+curl_test 'Check missing plan in text by omitting accept' 404 '' localhost:$PORT/plan/testuser@exampl3.com
 
 curl_test 'Delete authentication token' 200 'application/json' -u $TEST_USER:test1234 -XDELETE localhost:$PORT/token
 

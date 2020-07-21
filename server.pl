@@ -175,6 +175,11 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
       $type = 'application/json';
     }
     my $length = length($body);
+    $body = '' if $cgi->request_method() eq 'HEAD';
+    my $content_header = '';
+    if ($length > 0) {
+      $content_header = "\nContent-Type: $type\nContent-Length: $length";
+    }
     my $now = time;
     my $date = HTTP::Date::time2str($now);
     my $redirect_header = '';
@@ -189,9 +194,7 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
     print <<EOF;
 HTTP/1.1 $code $header
 Server: DotplanApi
-Date: $date$mtime_header
-Content-Type: $type
-Content-Length: $length$redirect_header
+Date: $date$mtime_header$content_header$redirect_header
 EOF
     print "\n$body";
   }
@@ -387,17 +390,15 @@ EOF
         print_response($cgi, 304, '', $format, undef, $mtime);
       } else {
         # render response
-        my $body = '';
+        my $body;
         delete $plan->{'mtime'};
-        if ($cgi->request_method() ne 'HEAD') {
-          if ($format eq 'application/json') {
-            $body = encode_json($plan);
-          } elsif ($format eq 'text/html') {
-            $body = encode_entities($plan->{'plan'});
-            $body =~ s/\n/<br>\n/g;
-          } else {
-            $body = $plan->{'plan'};
-          }
+        if ($format eq 'application/json') {
+          $body = encode_json($plan);
+        } elsif ($format eq 'text/html') {
+          $body = encode_entities($plan->{'plan'});
+          $body =~ s/\n/<br>\n/g;
+        } else {
+          $body = $plan->{'plan'};
         }
         print_response($cgi, 200, $body, $format, undef, $mtime);
       }
