@@ -329,6 +329,10 @@ curl_test 'Create SQL injection plan' 200 'application/json' -XPUT -d "{\"plan\"
   && assert_equal_jq '.success' 1 \
   && assert_exists 'benign plan file' 'data/plans' "$BADGUY_ESC.plan"
 
+now=`perl -e 'use HTTP::Date; print HTTP::Date::time2str(time)'`
+curl_test 'If-Modified-Since header' 304 '' -H "If-Modified-Since: $now" localhost:$PORT/plan/$TEST_USER \
+  && assert_equal 'Empty content' "$TEST_CONTENT" ""
+
 ###############
 # Test Teardown
 ###############
