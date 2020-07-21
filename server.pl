@@ -359,7 +359,7 @@ EOF
       my $token = $body->{'auth'};
       if (!defined $user->{'token'} || !defined $user->{'token_expires'} || !defined $token || $token ne $user->{'token'} || $user->{'token_expires'} < time) {
         print_response($cgi, 401, $not_authorized);
-      } elsif (length($plan) > $maximum_plan_length) {
+      } elsif (defined $plan && length($plan) > $maximum_plan_length) {
         print_json_response($cgi, 400, {error => "Plan exceeds maximum length of $maximum_plan_length."});
       } elsif (defined $signature && length($signature) > $maximum_signature_length) {
         print_json_response($cgi, 400, {error => "Signature exceeds maximum length of $maximum_signature_length."});

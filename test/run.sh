@@ -214,6 +214,14 @@ curl_test 'Get updated plan text' 200 'text/plain' localhost:$PORT/plan/$TEST_US
   && assert_equal 'text content' "$TEST_CONTENT" 'some&thing
 else'
 
+curl_test 'Delete a plan' 200 'application/json' -XPUT -d "{\"auth\":\"$token\"}" localhost:$PORT/plan/$TEST_USER \
+  && assert_equal_jq '.success' 1
+
+curl_test 'Verify deleted plan' 404 '' localhost:$PORT/plan/$TEST_USER
+
+curl_test 'Create another plan for future tests' 200 'application/json' -XPUT -d "{\"plan\":\"for future tests\",\"auth\":\"$token\"}" localhost:$PORT/plan/$TEST_USER \
+  && assert_equal_jq '.success' 1
+
 curl_test 'Check missing plan in json using accept' 404 'application/json' -H 'Accept: application/json' localhost:$PORT/plan/testuser@exampl3.com
 
 curl_test 'Check missing plan in json using querystring' 404 'application/json' localhost:$PORT/plan/testuser@exampl3.com?format=json
