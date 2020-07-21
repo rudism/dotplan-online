@@ -1,7 +1,7 @@
 from alpine:latest
 
 run apk add wget gnupg sqlite unzip build-base perl perl-dev perl-app-cpanminus
-run cpanm --notest IPC::Run DBD::SQLite Net::DNS::Resolver Crypt::Eksblowfish::Bcrypt JSON URI::Escape HTML::Entities String::ShellQuote Net::Server HTTP::Server::Simple Crypt::Random
+run cpanm --notest IPC::Run DBD::SQLite Net::DNS::Resolver Crypt::Eksblowfish::Bcrypt JSON URI::Escape HTML::Entities Net::Server HTTP::Server::Simple Crypt::Random
 
 run mkdir -p /opt/data/plans
 copy schema.sql /opt/data

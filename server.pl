@@ -14,8 +14,8 @@ my $pid_file = $ENV{'PID_FILE'} || './data/dotplan.pid';
 my $log_file = $ENV{'LOG_FILE'} || './data/dotplan.log';
 my $database = $ENV{'DATABASE'} || './data/users.db';
 my $plan_dir = $ENV{'PLAN_DIR'} || './data/plans';
-my $sendmail = $ENV{'SENDMAIL'} || '/usr/bin/true';
-my @sendmail_args = split(/,/, $ENV{'SENDMAIL_ARGS'});
+my $sendmail = $ENV{'SENDMAIL'} || '/bin/true';
+my @sendmail_args = defined $ENV{'SENDMAIL_ARGS'} ? split(/,/, $ENV{'SENDMAIL_ARGS'}) : ();
 
 my $pw_token_expiration_minutes = $ENV{'PW_TOKEN_EXPIRATION_MINUTES'} || 10;
 my $auth_token_default_expiration_minutes = $ENV{'AUTH_TOKEN_DEFAULT_EXPIRATION_MINUTES'} || 5;
@@ -64,7 +64,7 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
   use JSON qw(encode_json decode_json);
   use URI::Escape qw(uri_escape);
   use HTML::Entities qw(encode_entities);
-  use String::ShellQuote qw(shell_quote);
+  use File::Spec::Functions qw(catfile);
 
   ###############
   # Common Errors
@@ -400,7 +400,7 @@ EOF
         print_json_response($cgi, 400, {error => "Pubkey exceeds maximum length of $maximum_pubkey_length."});
       } else {
         my (undef, $keyfile) = tempfile('tmpXXXXXX', SUFFIX => '.gpg', TMPDIR => 1, OPEN => 0);
-        my $basename = "$plan_dir/" . shell_quote($email);
+        my $basename = catfile($plan_dir, $email);
         IPC::Run::run ['gpg2', '--dearmor'], \$pubkey, '>', $keyfile, '2>>', '/dev/null' or die "gpg2 exited with $?";
         if(IPC::Run::run ['gpg2', '--no-default-keyring', '--keyring', "$keyfile", '--verify', "$basename.asc", "$basename.plan"], '>', '/dev/null', '2>>', '/dev/null') {
           $plan->{'verified'} = 1;
@@ -456,7 +456,7 @@ EOF
     my @arg = ($sendmail);
     push @arg, @sendmail_args;
     push @arg, $recipient;
-    IPC::Run::run \@arg, \$email, '>>', '/dev/null', '2>>', '/dev/null' or die "sendmail exited with $?";
+    IPC::Run::run \@arg, \$email or die "sendmail exited with $?";
   }
 
   # get mime type for response from querystring and accept header
@@ -553,7 +553,7 @@ EOF
   my $_plancache = {};
   sub util_save_plan {
     my ($email, $plan, $signature) = @_;
-    my $basename = "$plan_dir/" . shell_quote($email);
+    my $basename = catfile($plan_dir, $email);
 
     if (defined $plan) {
       open(my $plan_file, '>', "$basename.plan") or die $!;
@@ -581,7 +581,7 @@ EOF
   sub util_read_plan {
     my $email = shift;
     if (!defined $_plancache->{$email}) {
-      my $basename = "$plan_dir/" . shell_quote($email);
+      my $basename = catfile($plan_dir, $email);
 
       if (-f "$basename.plan") {
         my $details = {};

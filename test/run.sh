@@ -55,7 +55,7 @@ assert_equal() {
   actual=$1;shift
   expected=$1;shift
   if [ "$actual" != "$expected" ]; then
-    printf "${RED}✗  CHECK${NC} ${BOLD}$check_name${NC}\n\n\"${YELLOW}$actual${NC}\" != \"${YELLOW}$expected${NC}\"\n\n"
+    printf "${RED}✗  CHECK${NC} ${BOLD}$check_name${NC}\n\n\"${YELLOW}"; echo -n "$actual"; printf "${NC}\" != \"${YELLOW}"; echo -n "$expected"; printf "${NC}\"\n\n"
     ((++FAILED))
     return 1
   fi
@@ -68,7 +68,7 @@ assert_equal_jq() {
   expected=$1;shift
   actual=$(echo "$TEST_CONTENT" | jq -r "$selector")
   if [ "$actual" != "$expected" ]; then
-    printf "${RED}✗  CHECK${NC} ${BOLD}$selector${NC}\n\n\"${YELLOW}$actual${NC}\" != \"${YELLOW}$expected${NC}\"\n\n"
+    printf "${RED}✗  CHECK${NC} ${BOLD}$selector${NC}\n\n\"${YELLOW}"; echo -n "$actual"; printf "${NC}\" != \"${YELLOW}"; echo -n "$expected"; printf "${NC}\"\n\n"
     ((++FAILED))
     return 1
   fi
@@ -81,11 +81,37 @@ assert_notequal_jq() {
   expected=$1;shift
   actual=$(echo "$TEST_CONTENT" | jq -r "$selector")
   if [ "$actual" == "$expected" ]; then
-    printf "${RED}✗  CHECK${NC} ${BOLD}$selector${NC} is null\n"
+    printf "${RED}✗  CHECK${NC} ${BOLD}$selector${NC}\n\n\"${YELLOW}"; echo -n "$selector"; printf "${NC}\" = \"${YELLOW}"; echo -n "$expected"; printf "${NC}\"\n\n"
     ((++FAILED))
     return 1
   fi
   printf "${GREEN}✓  CHECK${NC} ${BOLD}$selector${NC}\n"
+  return 0;
+}
+
+assert_exists() {
+  check_name=$1;shift
+  dir=$1;shift
+  file=$1;shift
+  if [ ! -e "$BASEDIR/$dir/$file" ]; then
+    printf "${RED}✗  CHECK${NC} ${BOLD}$check_name${NC}\n\n\"${YELLOW}"; echo -n "$BASEDIR/$dir/$file"; printf "${NC}\" does not exist\n\n"
+    ((++FAILED))
+    return 1
+  fi
+  printf "${GREEN}✓  CHECK${NC} ${BOLD}$check_name${NC}\n"
+  return 0;
+}
+
+assert_not_exists() {
+  check_name=$1;shift
+  dir=$1;shift
+  file=$1;shift
+  if [ -e "$BASEDIR/$dir/$file" ]; then
+    printf "${RED}✗  CHECK${NC} ${BOLD}$check_name${NC}\n\n\"${YELLOW}"; echo -n "$BASEDIR/$dir/$file"; printf "${NC}\" exists\n\n"
+    ((++FAILED))
+    return 1
+  fi
+  printf "${GREEN}✓  CHECK${NC} ${BOLD}$check_name${NC}\n"
   return 0;
 }
 
@@ -107,7 +133,6 @@ if [ -z "$USE_DOCKER" ]; then
   LOG_FILE="$BASEDIR/data/test.log" \
   DATABASE="$BASEDIR/data/test.db" \
   PLAN_DIR="$BASEDIR/data/plans" \
-  SENDMAIL=/usr/bin/true \
   perl "$BASEDIR/../server.pl" -d >>/dev/null
 else
   docker build -t dotplan-online-test "$BASEDIR/.."
@@ -118,7 +143,6 @@ else
     -e LOG_FILE="/opt/data/test.log" \
     -e DATABASE="/opt/data/test.db" \
     -e PLAN_DIR="/opt/data/plans" \
-    -e SENDMAIL=/usr/bin/true \
     dotplan-online-test
 fi
 
@@ -248,6 +272,63 @@ curl_test 'Verify signed plan' 200 'application/json' -XPOST -d "$post_data" loc
   && assert_equal_jq '.plan' 'this is a plan
 that is signed'
 
+BADGUY='badguy@example.com%2F..%2Fgotya'
+curl_test 'Avoid directory traversal 1 account creation' 404 'application/json' -XPOST -d '{"password":"test1234"}' localhost:$PORT/users/$BADGUY
+
+BADGUY='badguy@example.com%252F..%252Fgotya'
+BADGUY_ESC='badguy@example.com%2F..%2Fgotya'
+curl_test 'Avoid directory traversal 2 account creation' 200 'application/json' -XPOST -d '{"password":"test1234"}' localhost:$PORT/users/$BADGUY \
+  && assert_notequal_jq '.email' 'null'
+
+pw_token=$(echo "select pw_token from users where email='$BADGUY_ESC'" | sqlite3 "$BASEDIR/data/test.db")
+
+curl_test 'Verify directory traversal address 2' 200 'application/json' -XPUT -d "{\"token\":\"$pw_token\"}" localhost:$PORT/users/$BADGUY \
+  && assert_equal_jq '.success' 1
+
+curl_test 'Get directory traversal 2 authentication token' 200 'application/json' -u "$BADGUY_ESC:test1234" localhost:$PORT/token
+
+token=$(echo "$TEST_CONTENT" | jq -r '.token')
+
+curl_test 'Create directory traversal 2 plan' 200 'application/json' -XPUT -d "{\"plan\":\"something\",\"auth\":\"$token\"}" localhost:$PORT/plan/$BADGUY \
+  && assert_equal_jq '.success' 1 \
+  && assert_not_exists 'malicious file' 'data' 'gotya' \
+  && assert_exists 'benign plan file' 'data/plans' "$BADGUY_ESC.plan"
+
+BADGUY="badguy@example.com\\..\\gotya"
+curl_test 'Avoid directory traversal 3 account creation' 200 'application/json' -XPOST -d '{"password":"test1234"}' localhost:$PORT/users/$BADGUY
+
+pw_token=$(echo "select pw_token from users where email='$BADGUY'" | sqlite3 "$BASEDIR/data/test.db")
+
+curl_test 'Verify directory traversal address 3' 200 'application/json' -XPUT -d "{\"token\":\"$pw_token\"}" localhost:$PORT/users/$BADGUY \
+  && assert_equal_jq '.success' 1
+
+curl_test 'Get directory traversal 3 authentication token' 200 'application/json' -u "$BADGUY:test1234" localhost:$PORT/token
+
+token=$(echo "$TEST_CONTENT" | jq -r '.token')
+
+curl_test 'Create directory traversal 3 plan' 200 'application/json' -XPUT -d "{\"plan\":\"something\",\"auth\":\"$token\"}" localhost:$PORT/plan/$BADGUY \
+  && assert_equal_jq '.success' 1 \
+  && assert_not_exists 'malicious file' 'data' 'gotya' \
+  && assert_exists 'benign plan file' 'data/plans' "$BADGUY.plan"
+
+BADGUY="badguy%40example.com%27%3Bdrop%20table%20users%3B"
+BADGUY_ESC="badguy@example.com';drop table users;"
+curl_test 'Avoid SQL injection account creation' 200 'application/json' -XPOST -d '{"password":"test1234"}' "localhost:$PORT/users/$BADGUY" \
+  && assert_equal_jq '.email' "$BADGUY_ESC"
+
+pw_token=$(echo "select pw_token from users where email='${BADGUY_ESC//\'/\'\'}'" | sqlite3 "$BASEDIR/data/test.db")
+
+curl_test 'Verify SQL injection address' 200 'application/json' -XPUT -d "{\"token\":\"$pw_token\"}" localhost:$PORT/users/$BADGUY \
+  && assert_equal_jq '.success' 1
+
+curl_test 'Get SQL injection authentication token' 200 'application/json' -u "$BADGUY_ESC:test1234" localhost:$PORT/token
+
+token=$(echo "$TEST_CONTENT" | jq -r '.token')
+
+curl_test 'Create SQL injection plan' 200 'application/json' -XPUT -d "{\"plan\":\"something\",\"auth\":\"$token\"}" localhost:$PORT/plan/$BADGUY \
+  && assert_equal_jq '.success' 1 \
+  && assert_exists 'benign plan file' 'data/plans' "$BADGUY_ESC.plan"
+
 ###############
 # Test Teardown
 ###############
@@ -264,5 +345,10 @@ else
   docker kill dotplan_online_test
 fi
 
-printf "Tests complete.\n"
+if [ $FAILED -gt 0 ]; then
+  printf "${RED}"
+else
+  printf "${GREEN}"
+fi
+printf "Tests complete. $FAILED failed.${NC}\n"
 exit $FAILED
