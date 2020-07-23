@@ -99,6 +99,38 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
   #################
   # Request Routing
   #################
+  #
+  my $routes = [
+    {
+      path => qr/^\/plan\/([^\/]{$minimum_email_length,$maximum_email_length})$/,
+      methods => {
+        GET => {handler => \&get_plan, valid_types => ['application/json', 'text/plain']},
+        HEAD => {handler => \&get_plan, valid_types => ['application/json', 'text/plain']},
+        PUT => {handler => \&update_plan, valid_types => ['application/json']}
+      }
+    },
+    {
+      path => qr/^\/token$/,
+      methods => {
+        GET => {handler => \&get_token, valid_types => ['application/json']},
+        DELETE => {handler => \&delete_token, valid_types => ['application/json']}
+      }
+    },
+    {
+      path => qr/^\/users\/([^\/]{$minimum_email_length,$maximum_email_length})\/pwchange$/,
+      methods => {
+        GET => {handler => \&get_pwtoken, valid_types => ['application/json']},
+        PUT => {handler => \&update_password, valid_types => ['application/json']}
+      }
+    },
+    {
+      path => qr/^\/users\/([^\/]{$minimum_email_length,$maximum_email_length})$/,
+      methods => {
+        POST => {handler => \&create_user, valid_types => ['application/json']},
+        PUT => {handler => \&validate_email, valid_types => ['application/json']}
+      }
+    },
+  ];
 
   sub handle_request {
     my ($self, $cgi) = @_;
@@ -123,38 +155,6 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
     } else {
       $cgi->param('json-body', {});
     }
-
-    my $routes = [
-      {
-        path => qr/^\/plan\/([^\/]{$minimum_email_length,$maximum_email_length})$/,
-        methods => {
-          GET => {handler => \&get_plan, valid_types => ['application/json', 'text/plain']},
-          HEAD => {handler => \&get_plan, valid_types => ['application/json', 'text/plain']},
-          PUT => {handler => \&update_plan, valid_types => ['application/json']}
-        }
-      },
-      {
-        path => qr/^\/token$/,
-        methods => {
-          GET => {handler => \&get_token, valid_types => ['application/json']},
-          DELETE => {handler => \&delete_token, valid_types => ['application/json']}
-        }
-      },
-      {
-        path => qr/^\/users\/([^\/]{$minimum_email_length,$maximum_email_length})\/pwchange$/,
-        methods => {
-          GET => {handler => \&get_pwtoken, valid_types => ['application/json']},
-          PUT => {handler => \&update_password, valid_types => ['application/json']}
-        }
-      },
-      {
-        path => qr/^\/users\/([^\/]{$minimum_email_length,$maximum_email_length})$/,
-        methods => {
-          POST => {handler => \&create_user, valid_types => ['application/json']},
-          PUT => {handler => \&validate_email, valid_types => ['application/json']}
-        }
-      },
-    ];
 
     eval {
       util_log("REQ $req_id $method $path");

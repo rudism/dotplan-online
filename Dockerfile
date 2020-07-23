@@ -15,7 +15,9 @@ run mkdir -p /tmp/minisign && \
   make && \
   make install
 
-run mkdir -p /opt/data/plans
+run rm -rf /tmp/minisign && \
+  mkdir -p /opt/data/plans
+
 copy schema.sql /opt/data
 run cat /opt/data/schema.sql | sqlite3 /opt/data/users.db
 run rm /opt/data/schema.sql
