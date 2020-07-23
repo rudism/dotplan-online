@@ -14,7 +14,7 @@ my $pid_file = $ENV{'PID_FILE'} || './data/dotplan.pid';
 my $log_file = $ENV{'LOG_FILE'} || './data/dotplan.log';
 my $database = $ENV{'DATABASE'} || './data/users.db';
 my $plan_dir = $ENV{'PLAN_DIR'} || './data/plans';
-my $sendmail = $ENV{'SENDMAIL'} || '/bin/true';
+my $sendmail = $ENV{'SENDMAIL'};
 my @sendmail_args = defined $ENV{'SENDMAIL_ARGS'} ? split(/,/, $ENV{'SENDMAIL_ARGS'}) : ();
 
 my $pw_token_expiration_minutes = $ENV{'PW_TOKEN_EXPIRATION_MINUTES'} || 10;
@@ -272,7 +272,7 @@ EOF
     my $token = util_token(24);
     $sth->execute($crypted, $token, $email);
     die $sth->errstr if $sth->err;
-    util_sendmail($email, '[DOTPLAN] Verify your email',
+    util_sendmail($cgi, $email, '[DOTPLAN] Verify your email',
       "Please verify your email address.\n" .
       "Click the following link or copy it into your browser:\n" .
       "https://$hostname/verify.html?token=$token");
@@ -355,7 +355,7 @@ EOF
     my $sth = util_get_dbh()->prepare("UPDATE users SET pw_token=?, pw_token_expires=datetime('now', '+10 minutes') WHERE email=?");
     $sth->execute($token, $email);
     die $sth->errstr if $sth->err;
-    util_sendmail($email, '[DOTPLAN] Password reset request',
+    util_sendmail($cgi, $email, '[DOTPLAN] Password reset request',
       "Someone (hopefully you) has requested to change your password.\n" .
       "If it wasn't you, you can ignore and delete this email.\n\n" .
       "Otherwise, click the following link or copy it into your browser:\n" .
@@ -493,9 +493,7 @@ EOF
 
   # send an email
   sub util_sendmail {
-    my $recipient = shift;
-    my $subject = shift;
-    my $body = shift;
+    my ($cgi, $recipient, $subject, $body) = @_;
 
     my $email = <<EOF;
 To: $recipient
@@ -505,10 +503,18 @@ Subject: $subject
 $body
 EOF
 
-    my @arg = ($sendmail);
-    push @arg, @sendmail_args;
-    push @arg, $recipient;
-    IPC::Run::run \@arg, \$email or die "sendmail exited with $?";
+    if (defined $sendmail) {
+      eval {
+        my @arg = ($sendmail);
+        push @arg, @sendmail_args;
+        push @arg, $recipient;
+        IPC::Run::run \@arg, \$email or die "sendmail exited with $?";
+      };
+      if ($@) {
+        my $req_id = $cgi->param('request_id');
+        util_log("ERR(sendmail) $req_id $@");
+      }
+    }
   }
 
   # encrypt a password with a provided or random salt
