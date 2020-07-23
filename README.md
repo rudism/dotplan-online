@@ -1,39 +1,33 @@
-# dotplan.online
+# Dotplan
 
 ## The un-social network.
 
 - User-provided content tied to an email address.
-- Text only, limited to 4kb.
-- No retweets, shares, @s, likes, or boosting of any kind.
-- Authenticity optionally verified by clients using public PGP keys.
+- Text only.
+- No re-tweets, shares, @s, likes, or boosting of any kind.
+- Authenticity optionally verified by clients using OpenBSD signify/[Minisign](https://jedisct1.github.io/minisign/).
 - Accessed via public APIs.
 - Open source.
 - Self-hostable, discovery via domain SRV records.
 
 ## API
 
-Any dotplan implementation should expose at least the following two endpoints:
+Any Dotplan implementation should expose at least the following endpoint and behavior:
 
 - `GET /plan/{email}` - retrieve a plan
-   - `text/plain` by default - raw plan content
-   - `?format=html` or `Accept: text/html` - plan content with html entity encoding for special characters
-   - `?format=json` or `Accept: application/json`:
+   - `Accept: text/plain` request header - return raw plan content
+   - `Accept: application/json` request header - return json plan details:
       - `plan` - raw plan content
-      - `signature` - ascii armored PGP signature if this plan was signed
       - `timestamp` - when this plan was created
+      - `signature` - optional signature if this plan was signed
+   - `Last-Modified` response header should indicate when the plan was created
+   - `X-Dotplan-Pubkey: {base64 signify pubkey}` request header - perform signature verification
+      - append `X-Dotplan-Verified: true` response header if verification succeeded
+      - `403` if verification failed or is not supported by the server
+      - client-side signature verification using the json response should be favored since the server may not be trusted
    - `404` if no plan found
    - `301` redirect if domain SRV record indicates plan is on a different dotplan provider
-      - This is optional for servers to act as relays, in practice the client should look up the SRV record itself
-- `POST /verify/{email}` - verify PGP signature of a plan
-   - request json data:
-      - `pubkey` - ascii armored public PGP key to verify the signature with
-   - response json data:
-      - `verified` - `1` or `0` depending on whether verification of the plan signature was successful
-      - normal plan details included if `verified=1`
-   - `403` if server-side verification is not supported
-   - `404` if no plan found
-   - `308` redirect if domain SRV record indicates plan is on a different dotplan provider.
-      - This is optional for servers to act as relays, in practice the client should look up the SRV record itself.
+      - this is optional for servers to act as relays, client-side SRV lookups should be favored since the server may not be trusted
 
 ### Authentication
 

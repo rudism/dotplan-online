@@ -181,33 +181,25 @@ curl_test 'Get authentication token' 200 'application/json' -u $TEST_USER:test12
 
 token=$(echo "$TEST_CONTENT" | jq -r '.token')
 
-curl_test 'No plan by default' 404 '' localhost:$PORT/plan/$TEST_USER
+curl_test 'No plan by default' 404 'application/json' localhost:$PORT/plan/$TEST_USER
 
 curl_test 'Reject bad authentication token' 401 'application/json' -XPUT -d '{"plan":"something","auth":"wrong"}' localhost:$PORT/plan/$TEST_USER
 
 curl_test 'Create a plan' 200 'application/json' -XPUT -d "{\"plan\":\"something\",\"auth\":\"$token\"}" localhost:$PORT/plan/$TEST_USER \
   && assert_equal_jq '.success' 1
 
-curl_test 'Get initial plan' 200 'application/json' localhost:$PORT/plan/$TEST_USER?format=json \
+curl_test 'Get initial plan' 200 'application/json' -H 'Accept: application/json' localhost:$PORT/plan/$TEST_USER \
   && assert_equal_jq '.plan' 'something'
+
+curl_test 'Bad accept type' 406 'application/json' -H 'Accept: text/html' localhost:$PORT/plan/$TEST_USER
+
+curl_test 'Bad method' 405 'application/json' -XDELETE -H 'Accept: text/html' localhost:$PORT/plan/$TEST_USER
 
 curl_test 'Create a plan' 200 'application/json' -XPUT -d "{\"plan\":\"some&thing\\nelse\",\"auth\":\"$token\"}" localhost:$PORT/plan/$TEST_USER \
   && assert_equal_jq '.success' 1
 
-curl_test 'Get updated plan json using accept' 200 'application/json' -H 'Accept: application/json' localhost:$PORT/plan/$TEST_USER \
+curl_test 'Get updated plan json' 200 'application/json' -H 'Accept: application/json' localhost:$PORT/plan/$TEST_USER \
   && assert_equal_jq '.plan' 'some&thing
-else'
-
-curl_test 'Get updated plan json using querystring' 200 'application/json' localhost:$PORT/plan/$TEST_USER?format=json \
-  && assert_equal_jq '.plan' 'some&thing
-else'
-
-curl_test 'Get updated plan html using accept' 200 'text/html' -H 'Accept: text/html' localhost:$PORT/plan/$TEST_USER \
-  && assert_equal 'html content' "$TEST_CONTENT" 'some&amp;thing<br>
-else'
-
-curl_test 'Get updated plan html using querystring' 200 'text/html' localhost:$PORT/plan/$TEST_USER?format=html \
-  && assert_equal 'html content' "$TEST_CONTENT" 'some&amp;thing<br>
 else'
 
 curl_test 'Get updated plan text' 200 'text/plain' localhost:$PORT/plan/$TEST_USER \
@@ -217,20 +209,14 @@ else'
 curl_test 'Delete a plan' 200 'application/json' -XPUT -d "{\"auth\":\"$token\"}" localhost:$PORT/plan/$TEST_USER \
   && assert_equal_jq '.success' 1
 
-curl_test 'Verify deleted plan' 404 '' localhost:$PORT/plan/$TEST_USER
+curl_test 'Verify deleted plan' 404 'text/plain' -H 'Accept: text/*' localhost:$PORT/plan/$TEST_USER
 
 curl_test 'Create another plan for future tests' 200 'application/json' -XPUT -d "{\"plan\":\"for future tests\",\"auth\":\"$token\"}" localhost:$PORT/plan/$TEST_USER \
   && assert_equal_jq '.success' 1
 
-curl_test 'Check missing plan in json using accept' 404 'application/json' -H 'Accept: application/json' localhost:$PORT/plan/testuser@exampl3.com
+curl_test 'Check missing plan in json' 404 'application/json' -H 'Accept: application/json' localhost:$PORT/plan/testuser@exampl3.com
 
-curl_test 'Check missing plan in json using querystring' 404 'application/json' localhost:$PORT/plan/testuser@exampl3.com?format=json
-
-curl_test 'Check missing plan in html using accept' 404 '' -H 'Accept: text/html' localhost:$PORT/plan/testuser@exampl3.com
-
-curl_test 'Check missing plan in html using querystring' 404 '' localhost:$PORT/plan/testuser@exampl3.com?format=html
-
-curl_test 'Check missing plan in text by omitting accept' 404 '' localhost:$PORT/plan/testuser@exampl3.com
+curl_test 'Check missing plan in text' 404 'text/plain' -H 'Accept: text/*' localhost:$PORT/plan/testuser@exampl3.com
 
 curl_test 'Delete authentication token' 200 'application/json' -u $TEST_USER:test1234 -XDELETE localhost:$PORT/token
 
@@ -269,14 +255,9 @@ curl_test 'Get signed plan' 200 'application/json' -H 'Accept: application/json'
 that is signed' \
   && assert_notequal_jq '.signature' 'null'
 
-post_data=$(<"$BASEDIR/signed-verify-bad.json")
-curl_test 'Fail to verify with bad pubkey' 200 'application/json' -XPOST -d "$post_data" localhost:$PORT/verify/$TEST_USER \
-  && assert_equal_jq '.verified' 0 \
-  && assert_equal_jq '.plan' 'null'
+curl_test 'Fail to verify with bad pubkey' 403 'text/plain' -H 'Accept: text/*' -H 'X-Dotplan-Pubkey: RWSM/86eVMfThd89U/aVHVpFrXhTO7x2PXGVJ2mu1o3YLxVNKy+IKYPK' localhost:$PORT/plan/$TEST_USER
 
-post_data=$(<"$BASEDIR/signed-verify.json")
-curl_test 'Verify signed plan' 200 'application/json' -XPOST -d "$post_data" localhost:$PORT/verify/$TEST_USER \
-  && assert_equal_jq '.verified' 1 \
+curl_test 'Verify signed plan' 200 'application/json' -H 'Accept: application/json' -H 'X-Dotplan-Pubkey: RWTbCoXPuccYts4F50FuQh3G/yIXAzINpW6Vk/X1AEgwwf3K5nNLHA8W' localhost:$PORT/plan/$TEST_USER \
   && assert_equal_jq '.plan' 'this is a plan
 that is signed'
 
@@ -338,7 +319,7 @@ curl_test 'Create SQL injection plan' 200 'application/json' -XPUT -d "{\"plan\"
   && assert_exists 'benign plan file' 'data/plans' "$BADGUY_ESC.plan"
 
 now=`perl -e 'use HTTP::Date; print HTTP::Date::time2str(time)'`
-curl_test 'If-Modified-Since header' 304 '' -H "If-Modified-Since: $now" localhost:$PORT/plan/$TEST_USER \
+curl_test 'If-Modified-Since header' 304 'text/plain' -H 'Accept: text/*' -H "If-Modified-Since: $now" localhost:$PORT/plan/$TEST_USER \
   && assert_equal 'Empty content' "$TEST_CONTENT" ""
 
 ###############
