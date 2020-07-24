@@ -322,6 +322,8 @@ now=`perl -e 'use HTTP::Date; print HTTP::Date::time2str(time)'`
 curl_test 'If-Modified-Since header' 304 'text/plain' -H 'Accept: text/*' -H "If-Modified-Since: $now" localhost:$PORT/plan/$TEST_USER \
   && assert_equal 'Empty content' "$TEST_CONTENT" ""
 
+curl_test 'Static index' 200 'text/html' localhost:$PORT/
+
 ###############
 # Test Teardown
 ###############

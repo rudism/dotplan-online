@@ -41,19 +41,9 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
   package DotplanApi;
   use base qw(HTTP::Server::Simple::CGI);
   sub net_server { 'Net::Server::Fork' }
-  use HTTP::Server::Simple::Static;
   my $webroot = './static';
 
-  # Caching DNS resolver
-  {
-    package Net::DNS::Resolver;
-    my %cache;
-    sub query {
-      my $self = shift;
-      $cache{"@_"} ||= $self->SUPER::query(@_);
-    }
-  }
-
+  use HTTP::Server::Simple::Static;
   use IPC::Run;
   use DBI;
   use File::Temp qw(tempfile);
