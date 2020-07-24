@@ -133,6 +133,7 @@ if [ -z "$USE_DOCKER" ]; then
   LOG_FILE="$BASEDIR/data/test.log" \
   DATABASE="$BASEDIR/data/test.db" \
   PLAN_DIR="$BASEDIR/data/plans" \
+  CACHE_DIR="$BASEDIR/data/cache" \
   perl "$BASEDIR/../server.pl" -d >>/dev/null
 else
   docker build -t dotplan-online-test "$BASEDIR/.."
@@ -143,6 +144,7 @@ else
     -e LOG_FILE="/opt/data/test.log" \
     -e DATABASE="/opt/data/test.db" \
     -e PLAN_DIR="/opt/data/plans" \
+    -e CACHE_DIR="$BASEDIR/data/cache" \
     dotplan-online-test
 fi
 

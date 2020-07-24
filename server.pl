@@ -14,6 +14,7 @@ my $pid_file = $ENV{'PID_FILE'} || './data/dotplan.pid';
 my $log_file = $ENV{'LOG_FILE'} || './data/dotplan.log';
 my $database = $ENV{'DATABASE'} || './data/users.db';
 my $plan_dir = $ENV{'PLAN_DIR'} || './data/plans';
+my $cache_dir = $ENV{'CACHE_DIR'} || './data/cache';
 my $sendmail = $ENV{'SENDMAIL'};
 my @sendmail_args = defined $ENV{'SENDMAIL_ARGS'} ? split(/,/, $ENV{'SENDMAIL_ARGS'}) : ();
 
@@ -43,6 +44,7 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
   sub net_server { 'Net::Server::Fork' }
   my $webroot = './static';
 
+  use Cache::FileCache;
   use HTTP::Server::Simple::Static;
   use IPC::Run;
   use DBI;
@@ -57,6 +59,19 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
   use HTTP::Accept;
   use URI::Escape qw(uri_escape uri_unescape);
   use File::Spec::Functions qw(catfile);
+
+  ########
+  # Caches
+  ########
+
+  # cache plans by email
+  my $_plancache = Cache::FileCache->new({cache_root => $cache_dir, namespace => 'plan', default_expires_in => 3600});
+
+  # cache SRV records by domain
+  my $_srvcache = Cache::FileCache->new({cache_root => $cache_dir, namespace => 'srv', default_expires_in => 3600});
+
+  # cache static responses
+  my $_staticcache = Cache::FileCache->new({cache_root => $cache_dir, namespace => 'static', default_expires_in => 3600});
 
   ###############
   # Common Errors
@@ -169,7 +184,7 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
       }
 
       # if no handler, check for static file
-      if (!$self->serve_static($cgi, $webroot)) {
+      if (!cached_static_file($self, $cgi, $path)) {
         print_response($cgi, 404);
       }
     };
@@ -179,9 +194,23 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
     }
   }
 
-  ##################
-  # Response Handler
-  ##################
+  sub cached_static_file {
+    my ($server, $cgi, $path) = @_;
+    my $cached = $_staticcache->get($path);
+    if (!defined $cached) {
+      open local(*STDOUT), '>', \$cached;
+      if (!serve_static($server, $cgi, $webroot)) {
+        $cached = 0;
+      }
+      $_staticcache->set($path, $cached);
+    }
+    print $cached if $cached;
+    return $cached;
+  }
+
+  ###################
+  # Response Handlers
+  ###################
 
   sub print_response {
     my ($cgi, $code, $headers, $body) = @_;
@@ -585,7 +614,6 @@ EOF
   }
 
   # save a plan by email
-  my $_plancache = {};
   sub util_save_plan {
     my ($email, $plan, $signature) = @_;
     my $basename = catfile($plan_dir, $email);
@@ -609,64 +637,72 @@ EOF
     }
 
     # invalidate cache
-    delete $_plancache->{$email} if $_plancache->{$email};
+    $_plancache->remove($email);
   }
 
   # read a plan from cache or disk
   sub util_read_plan {
     my $email = shift;
-    if (!defined $_plancache->{$email}) {
+    my $cached = $_plancache->get($email);
+    if (!defined $cached) {
       my $basename = catfile($plan_dir, $email);
 
       if (-f "$basename.plan") {
-        my $details = {};
+        $cached = {};
         open(my $plan_file, '<', "$basename.plan") or die $!;
         flock($plan_file, LOCK_SH);
         my $mtime = (stat($plan_file))[9];
         my $timestamp = HTTP::Date::time2str($mtime);
-        $details->{'mtime'} = $mtime;
-        $details->{'timestamp'} = $timestamp;
+        $cached->{'mtime'} = $mtime;
+        $cached->{'timestamp'} = $timestamp;
         local $/;
-        $details->{'plan'} = <$plan_file>;
+        $cached->{'plan'} = <$plan_file>;
         close($plan_file);
 
         if (-f "$basename.sig") {
           open(my $sig_file, '<', "$basename.sig") or die $!;
           flock($sig_file, LOCK_SH);
           local $/;
-          $details->{'signature'} = <$sig_file>;
+          $cached->{'signature'} = <$sig_file>;
           close($sig_file);
         }
 
-        $_plancache->{$email} = $details;
+        $_plancache->set($email, $cached);
       }
     }
-    return $_plancache->{$email};
+    return $cached;
   }
 
   # retrieve a plan by email
-  my $_dns = new Net::DNS::Resolver();
   sub util_get_plan {
     my $email = shift;
     my ($local, $domain) = split(/\@/, $email, 2);
     if (!$localdomains->{$domain}) {
-      my $reply = $_dns->query("_dotplan._tcp.$domain", 'SRV');
-      if (defined $reply && $reply->answer > 0) {
-        my @answer = $reply->answer;
-        my ($pri, $wgt, $port, $svchost) = split(/\s+/, $answer[0]->rdstring, 4);
-        $svchost =~ s/\.$//;
-        my $encoded = uri_escape($email);
-        if ($hostname ne $svchost) {
-          return {
-            redirect => $port == 80
-              ? "http://$svchost/$encoded"
+      my $cached = $_srvcache->get($domain);
+      if (!defined $cached) {
+        my $dns = Net::DNS::Resolver->new();
+        my $reply = $dns->query("_dotplan._tcp.$domain", 'SRV');
+        if (defined $reply && $reply->answer > 0) {
+          my @answer = $reply->answer;
+          my (undef, undef, $port, $svchost) = split(/\s+/, $answer[0]->rdstring, 4);
+          $svchost =~ s/\.$//;
+          if ($hostname ne $svchost) {
+            $cached = $port == 80
+              ? "http://$svchost"
               : $port == 443
-                ? "https://$svchost/$encoded"
-                : "https://$svchost:$port/$encoded"
-          };
+                ? "https://$svchost"
+                : "https://$svchost:$port";
+            $_srvcache->set($domain, $cached);
+          } else {
+            $cached = 0;
+          }
         } else {
-          return util_read_plan($email);
+          $cached = 0;
         }
+      }
+      if ($cached) {
+        my $encoded = uri_escape($email);
+        return {redirect => "$cached/plan/$encoded"};
       } else {
         return util_read_plan($email);
       }
