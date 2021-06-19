@@ -441,6 +441,7 @@ EOF
     my ($cgi, $email) = @_;
 
     my $plan = util_get_plan($email);
+    my $format = $cgi->param('accept')->match(qw(text/plain application/json));
 
     if (defined $plan && defined $plan->{'redirect'}) {
       # found external plan service, redirect request
@@ -448,7 +449,8 @@ EOF
       return;
     }
     if (!defined $plan) {
-      print_response($cgi, 404);
+      my $body = $format eq 'text/plain' ? 'No Plan.' : encode_json({error => 'No Plan.'});
+      print_response($cgi, 404, {'Content-Type' => $format}, $body);
       return;
     }
     my $pubkey = $cgi->http('X-Dotplan-Pubkey');
@@ -469,7 +471,6 @@ EOF
     # render response
     my $body;
     delete $plan->{'mtime'};
-    my $format = $cgi->param('accept')->match(qw(text/plain application/json));
     if ($format eq 'application/json') {
       $body = encode_json($plan);
     } else {

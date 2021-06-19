@@ -183,7 +183,7 @@ curl_test 'Get authentication token' 200 'application/json' -u $TEST_USER:test12
 
 token=$(echo "$TEST_CONTENT" | jq -r '.token')
 
-curl_test 'No plan by default' 404 'application/json' localhost:$PORT/plan/$TEST_USER
+curl_test 'No plan by default' 404 'text/plain' localhost:$PORT/plan/$TEST_USER
 
 curl_test 'Reject bad authentication token' 401 'application/json' -XPUT -d '{"plan":"something","auth":"wrong"}' localhost:$PORT/plan/$TEST_USER
 
