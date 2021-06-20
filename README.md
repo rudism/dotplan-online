@@ -5,7 +5,7 @@ A modern, decentralized re-imagining of the Unix [plan](https://unix.stackexchan
 - User-provided content tied to an email address.
 - Text only.
 - No re-tweets, shares, @s, likes, or boosting of any kind.
-- Authenticity optionally verified by clients using OpenBSD signify/[Minisign](https://jedisct1.github.io/minisign/).
+- Authenticity optionally verified by clients using [minisign](https://jedisct1.github.io/minisign/).
 - Accessed via public APIs.
 - Open source.
 - Self-hostable, discovery via domain [SRV records](https://en.wikipedia.org/wiki/SRV_record).

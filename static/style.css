@@ -118,9 +118,11 @@ pre > code {
   color: #eadead;
 }
 
-hr {
-  margin: 1em 0 0.5em 0;
-  border: 0;
-  height: 0;
-  border-bottom: 2px dashed #88b8f6;
+footer {
+  font-style: italic;
+  color: #9c998e;
+  border-top: 2px dashed #9c998e;
+  margin-top: 1.5em;
 }
+
+.github-corner:hover .octo-arm{animation:octocat-wave 560ms ease-in-out}@keyframes octocat-wave{0%,100%{transform:rotate(0)}20%,60%{transform:rotate(-25deg)}40%,80%{transform:rotate(10deg)}}@media (max-width:500px){.github-corner:hover .octo-arm{animation:none}.github-corner .octo-arm{animation:octocat-wave 560ms ease-in-out}}
