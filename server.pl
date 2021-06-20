@@ -293,8 +293,11 @@ EOF
     die $sth->errstr if $sth->err;
     util_sendmail($cgi, $email, '[DOTPLAN] Verify your email',
       "Please verify your email address.\n" .
-      "Click the following link or copy it into your browser:\n" .
-      "https://$hostname/verify.html?token=$token");
+      "Your verification token is: $token\n" .
+      "Run this (or equivalent) in a terminal:\n\n" .
+      "    curl -H 'Content-Type: application/json' \\\n" .
+      "      -XPUT -d '{\"token\",\"$token\"}' \\\n" .
+      "      https://$hostname/users/$email");
     print_json_response($cgi, 200, {email => $email});
   }
 
@@ -377,8 +380,12 @@ EOF
     util_sendmail($cgi, $email, '[DOTPLAN] Password reset request',
       "Someone (hopefully you) has requested to change your password.\n" .
       "If it wasn't you, you can ignore and delete this email.\n\n" .
-      "Otherwise, click the following link or copy it into your browser:\n" .
-      "https://$hostname/change-password.html?token=$token");
+      "Your password change token is: $token\n\n" .
+      "Run this (or equivalent) in a terminal after adding your desired\n" .
+      "password to the appropriate field in the JSON payload:\n\n" .
+      "    curl -H 'Content-Type: application/json' \\\n" .
+      "      -XPUT -d '{\"password\":\"\",\"token\",\"$token\"}' \\\n" .
+      "      https://$hostname/users/$email/pwchange");
     print_json_response($cgi, 200, {success => 1});
   }
 

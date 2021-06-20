@@ -50,8 +50,8 @@ table {
 /* site styling */
 
 html, body {
-  font-size: 125%;
-  line-height: 130%;
+  font-size: 1.25em;
+  line-height: 1.5em;
   font-family: monospace;
   color: #e3e0d7;
   background-color: #080808;
@@ -68,14 +68,27 @@ p {
   margin: 1em 0 0.5em 0;
 }
 
-h1 {
+h1, h2, h3 {
   font-weight: 900;
   color: #cae982;
   margin: 1em 0 0.5em 0;
 }
 
+h1 {
+  padding-bottom: 0.5em;
+  border-bottom: 2px dashed #cae982;
+}
+
 h1::before {
   content: '# ';
+}
+
+h2::before {
+  content: '## ';
+}
+
+h3::before {
+  content: '### ';
 }
 
 a {
@@ -87,4 +100,27 @@ a {
 
 a:hover {
   color: #eadead;
+}
+
+pre {
+  overflow-x: auto;
+}
+
+p > code {
+  color: #e5786d;
+}
+
+p > code::before, p > code::after {
+  content: "`";
+}
+
+pre > code {
+  color: #eadead;
+}
+
+hr {
+  margin: 1em 0 0.5em 0;
+  border: 0;
+  height: 0;
+  border-bottom: 2px dashed #88b8f6;
 }

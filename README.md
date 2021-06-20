@@ -1,6 +1,6 @@
 # Dotplan
 
-## The un-social network.
+A modern, decentralized re-imagining of the Unix [plan](https://unix.stackexchange.com/questions/122782/what-is-plan-for-users) file.
 
 - User-provided content tied to an email address.
 - Text only.
@@ -8,7 +8,7 @@
 - Authenticity optionally verified by clients using OpenBSD signify/[Minisign](https://jedisct1.github.io/minisign/).
 - Accessed via public APIs.
 - Open source.
-- Self-hostable, discovery via domain SRV records.
+- Self-hostable, discovery via domain [SRV records](https://en.wikipedia.org/wiki/SRV_record).
 
 ## API
 
@@ -65,3 +65,11 @@ The reference dotplan implementation exposes this endpoint to update a plan usin
       - `signature` - optional ascii encoded PGP signature
       - `auth` - the authentication token
    - omitting `plan` from the payload will delete the existing plan
+
+## Discovery via Domain SRV
+
+To facilitate service discovery by Dotplan clients and relays, add a [SRV record](https://en.wikipedia.org/wiki/SRV_record) to your email domain with the name `_dotplan._tcp`. For example, to use `dotplan.online` as the service provider for email addresses at `example.com`, the record would look like this:
+
+```
+_dotplan._tcp.example.com. 86400 IN SRV 0 1 443 dotplan.online.
+```
