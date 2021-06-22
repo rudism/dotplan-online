@@ -175,6 +175,9 @@ curl_test 'Reject bad verification email' 404 'application/json' -XPUT -d "{\"to
 curl_test 'Verify email address' 200 'application/json' -XPUT -d "{\"token\":\"$pw_token\"}" localhost:$PORT/users/$TEST_USER \
   && assert_equal_jq '.success' 1
 
+curl_test 'Reject existing user registration' 400 'application/json' -XPOST -d "$REQ_DATA" localhost:$PORT/users/$TEST_USER \
+  && assert_notequal_jq '.email' $TEST_USER
+
 curl_test 'Reject incorrect email' 401 'application/json' -u testuser@exampl3.com:test1234 localhost:$PORT/token
 
 curl_test 'Reject incorrect password' 401 'application/json' -u $TEST_USER:thisiswrong localhost:$PORT/token
