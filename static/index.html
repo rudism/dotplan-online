@@ -25,8 +25,8 @@
     <h3>Dotplan Online</h3>
     <p>Register the email address <code>test@example.com</code> with password <code>my-password-123</code> (an email with further instructions will be sent):</p>
     <pre><code>    curl -H 'Content-Type: application/json' \
-      -XPUT -d '{"password":"my-password-123"}' \
-      https://dotplan.online/test@example.com</code></pre>
+      -XPOST -d '{"password":"my-password-123"}' \
+      https://dotplan.online/users/test@example.com</code></pre>
     <p>Retrieve an authentication token for the account created above:</p>
     <pre><code>    curl -H 'Accept: application/json' \
       -u 'test@example.com:my-password-123' \

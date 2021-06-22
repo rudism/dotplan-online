@@ -1,5 +1,6 @@
 #!/usr/bin/env perl
 
+use local::lib;
 use utf8;
 use strict;
 use warnings;
@@ -296,7 +297,7 @@ EOF
       "Your verification token is: $token\n" .
       "Run this (or equivalent) in a terminal:\n\n" .
       "    curl -H 'Content-Type: application/json' \\\n" .
-      "      -XPUT -d '{\"token\",\"$token\"}' \\\n" .
+      "      -XPUT -d '{\"token\":\"$token\"}' \\\n" .
       "      https://$hostname/users/$email");
     print_json_response($cgi, 200, {email => $email});
   }
@@ -384,7 +385,7 @@ EOF
       "Run this (or equivalent) in a terminal after adding your desired\n" .
       "password to the appropriate field in the JSON payload:\n\n" .
       "    curl -H 'Content-Type: application/json' \\\n" .
-      "      -XPUT -d '{\"password\":\"\",\"token\",\"$token\"}' \\\n" .
+      "      -XPUT -d '{\"password\":\"\",\"token\":\"$token\"}' \\\n" .
       "      https://$hostname/users/$email/pwchange");
     print_json_response($cgi, 200, {success => 1});
   }
