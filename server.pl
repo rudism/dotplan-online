@@ -60,6 +60,7 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
   use HTTP::Accept;
   use URI::Escape qw(uri_escape uri_unescape);
   use File::Spec::Functions qw(catfile);
+  use HTML::Entities qw(encode_entities);
 
   ########
   # Caches
@@ -136,6 +137,12 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
         PUT => {handler => \&validate_email, valid_types => ['application/json']}
       }
     },
+    {
+      path => qr/^\/js\/([^\/]{$minimum_email_length,$maximum_email_length})$/,
+      methods => {
+        GET => {handler => \&get_plan_js, valid_types => ['application/javascript']}
+      }
+    }
   ];
 
   sub handle_request {
@@ -486,6 +493,49 @@ EOF
     }
     my $headers = {
       'Content-Type' => $format,
+      'Last-Modified' => HTTP::Date::time2str($mtime)
+    };
+    if (defined $pubkey) {
+      $headers->{'X-Dotplan-Verified'} = 'true';
+    }
+    print_response($cgi, 200, $headers, $body);
+  }
+
+  ##### GET /js/{email}
+  sub get_plan_js {
+    my ($cgi, $email) = @_;
+
+    my $plan = util_get_plan($email);
+    my $format = $cgi->param('accept')->match(qw(application/javascript));
+
+    if (!defined $plan || defined $plan->{'redirect'}) {
+      # js can only be requested for locally served plans
+      print_response($cgi, 404);
+      return;
+    }
+    my $pubkey = $cgi->http('X-Dotplan-Pubkey');
+    if ((defined $pubkey && !defined $plan->{'signature'}) ||
+      (defined $pubkey && !util_verify_plan($email, $pubkey))) {
+      print_response($cgi, 403);
+      return;
+    }
+    # check modified time
+    my $now = time;
+    my $mtime = $plan->{'mtime'};
+    my $ifmod = $cgi->http('If-Modified-Since');
+    my $ifmtime = HTTP::Date::str2time($ifmod) if defined $ifmod;
+    if (defined $mtime && defined $ifmtime && $ifmtime <= $now && $mtime <= $ifmtime) {
+      print_response($cgi, 304);
+      return;
+    }
+    # render response
+    delete $plan->{'mtime'};
+    my $escapedPlan = encode_entities($plan->{'plan'});
+    $escapedPlan =~ s/'/\\'/g;
+    $escapedPlan =~ s/\n/\\n/g;
+    my $body = "document.getElementById('dotplan').innerHTML = '$escapedPlan';";
+    my $headers = {
+      'Content-Type' => 'application/javascript',
       'Last-Modified' => HTTP::Date::time2str($mtime)
     };
     if (defined $pubkey) {
