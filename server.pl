@@ -539,7 +539,14 @@ EOF
     my $escapedPlan = encode_entities($plan->{'plan'});
     $escapedPlan =~ s/\n/<br>/g;
     $escapedPlan =~ s/(<br>)*$//;
-    my $body = "document.getElementById('dotplan').innerHTML = '$escapedPlan';";
+    my ($sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst) = localtime($mtime);
+    $year += 1900;
+    $mon++;
+    my $fmtMtime = sprintf('%d-%02d-%02d', $year, $mon, $mday);
+    my $body = <<EOF;
+document.getElementById('dotplan_date').innerHTML = '$fmtMtime';
+document.getElementById('dotplan_plan').innerHTML = '$escapedPlan';
+EOF
     my $headers = {
       'Content-Type' => 'application/javascript',
       'Last-Modified' => HTTP::Date::time2str($mtime)
