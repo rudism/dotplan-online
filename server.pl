@@ -35,6 +35,8 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
   $localdomains->{$_}++ for (split(/,/, $ENV{'LOCAL_DOMAINS'}));
 }
 
+my $enable_experimental_features = $ENV{'ENABLE_EXPERIMENTAL_FEATURES' } || 0;
+
 #########################################
 # dotplan.online Reference Implementation
 #########################################
@@ -137,6 +139,7 @@ if (defined $ENV{'LOCAL_DOMAINS'}) {
         PUT => {handler => \&validate_email, valid_types => ['application/json']}
       }
     },
+    # experimental features:
     {
       path => qr/^\/js\/([^\/]{$minimum_email_length,$maximum_email_length})$/,
       methods => {
@@ -505,8 +508,12 @@ EOF
   sub get_plan_js {
     my ($cgi, $email) = @_;
 
+    if (!$enable_experimental_features) {
+      print_response($cgi, 404);
+      return;
+    }
+
     my $plan = util_get_plan($email);
-    my $format = $cgi->param('accept')->match(qw(application/javascript));
 
     if (!defined $plan || defined $plan->{'redirect'}) {
       # js can only be requested for locally served plans
@@ -529,10 +536,9 @@ EOF
       return;
     }
     # render response
-    delete $plan->{'mtime'};
     my $escapedPlan = encode_entities($plan->{'plan'});
-    $escapedPlan =~ s/'/\\'/g;
-    $escapedPlan =~ s/\n/\\n/g;
+    $escapedPlan =~ s/\n/<br>/g;
+    $escapedPlan =~ s/(<br>)*$//;
     my $body = "document.getElementById('dotplan').innerHTML = '$escapedPlan';";
     my $headers = {
       'Content-Type' => 'application/javascript',
