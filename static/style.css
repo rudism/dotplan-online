@@ -50,9 +50,8 @@ table {
 /* site styling */
 
 html, body {
-  font-size: 1.25em;
   line-height: 1.5em;
-  font-family: monospace;
+  font-family: sans-serif;
   color: #e3e0d7;
   background-color: #080808;
 }
@@ -108,6 +107,7 @@ pre {
 
 p > code {
   color: #e5786d;
+  font-family: monospace;
 }
 
 p > code::before, p > code::after {
@@ -116,6 +116,7 @@ p > code::before, p > code::after {
 
 pre > code {
   color: #eadead;
+  font-family: monospace;
 }
 
 footer {
