@@ -520,11 +520,12 @@ EOF
       print_response($cgi, 404);
       return;
     }
-    my $pubkey = $cgi->http('X-Dotplan-Pubkey');
+    my $callback = $cgi->param('callback') || 'handle_dotplan';
+    my $pubkey = $cgi->param('pubkey');
+    my $planJson = encode_json($plan);
     if ((defined $pubkey && !defined $plan->{'signature'}) ||
       (defined $pubkey && !util_verify_plan($email, $pubkey))) {
-      print_response($cgi, 403);
-      return;
+      $planJson = '{"error":"The requested plan signature could not be verified with the specified public key."}';
     }
     # check modified time
     my $now = time;
@@ -536,24 +537,11 @@ EOF
       return;
     }
     # render response
-    my $escapedPlan = encode_entities($plan->{'plan'});
-    $escapedPlan =~ s/\n/<br>/g;
-    $escapedPlan =~ s/(<br>)*$//;
-    my ($sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst) = localtime($mtime);
-    $year += 1900;
-    $mon++;
-    my $fmtMtime = sprintf('%d-%02d-%02d', $year, $mon, $mday);
-    my $body = <<EOF;
-document.getElementById('dotplan_date').innerHTML = '$fmtMtime';
-document.getElementById('dotplan_plan').innerHTML = '$escapedPlan';
-EOF
+    my $body = "(function() { $callback($planJson); })();";
     my $headers = {
       'Content-Type' => 'application/javascript',
       'Last-Modified' => HTTP::Date::time2str($mtime)
     };
-    if (defined $pubkey) {
-      $headers->{'X-Dotplan-Verified'} = 'true';
-    }
     print_response($cgi, 200, $headers, $body);
   }
 
