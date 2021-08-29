@@ -70,6 +70,10 @@ The reference dotplan implementation exposes this endpoint to update a plan usin
       - `auth` - the authentication token
    - omitting `plan` from the payload will delete the existing plan
 
+### Experimental
+
+If experimental features are enabled in this reference implementation, `GET /js/{email}` with an optional `callback` parameter will return a [JSONP](https://en.wikipedia.org/wiki/JSONP) script that calls your function (`handle_dotplan` by default), passing the plan in json format. You can also optionally specify a `pubkey` parameter (if verification fails it will return an `{"error":"..."}` object).
+
 ## Discovery via Domain SRV
 
 To facilitate service discovery by Dotplan clients and relays, add a [SRV record](https://en.wikipedia.org/wiki/SRV_record) to your email domain with the name `_dotplan._tcp`. For example, to use `dotplan.online` as the service provider for email addresses at `example.com`, the record would look like this:
