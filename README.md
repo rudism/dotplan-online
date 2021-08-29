@@ -10,6 +10,10 @@ A modern, decentralized re-imagining of the Unix [plan](https://unix.stackexchan
 - Open source.
 - Self-hostable, discovery via domain [SRV records](https://en.wikipedia.org/wiki/SRV_record).
 
+## Client Implementations and Tools
+
+- [dotplan-cli](https://github.com/rudism/dotplan-cli) is a script for interacting with dotplan providers from the linux shell
+
 ## API
 
 Any Dotplan implementation should expose at least the following endpoint and behavior:
