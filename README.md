@@ -1,3 +1,5 @@
+**Note:** Active development has moved to https://code.sitosis.com/rudism/dotplan-online
+
 # Dotplan
 
 A modern, decentralized re-imagining of the Unix [plan](https://unix.stackexchange.com/questions/122782/what-is-plan-for-users) file.
